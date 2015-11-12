@@ -108,6 +108,9 @@ static inline int phy_aneg_done(struct phy_device *phydev)
 {
 	int retval;
 
+	if (phydev->drv->aneg_done)
+		return phydev->drv->aneg_done(phydev);
+
 	retval = phy_read(phydev, MII_BMSR);
 
 	return (retval < 0) ? retval : (retval & BMSR_ANEGCOMPLETE);
@@ -300,6 +303,50 @@ int phy_ethtool_gset(struct phy_device *phydev, struct ethtool_cmd *cmd)
 	return 0;
 }
 EXPORT_SYMBOL(phy_ethtool_gset);
+
+int phy_ethtool_ioctl(struct phy_device *phydev, void *useraddr)
+{
+	u32 cmd;
+	int tmp;
+	struct ethtool_cmd ecmd = { ETHTOOL_GSET };
+	struct ethtool_value edata = { ETHTOOL_GLINK };
+
+	if (get_user(cmd, (u32 *) useraddr))
+		return -EFAULT;
+
+	switch (cmd) {
+	case ETHTOOL_GSET:
+		phy_ethtool_gset(phydev, &ecmd);
+		if (copy_to_user(useraddr, &ecmd, sizeof(ecmd)))
+			return -EFAULT;
+		return 0;
+
+	case ETHTOOL_SSET:
+		if (copy_from_user(&ecmd, useraddr, sizeof(ecmd)))
+			return -EFAULT;
+		return phy_ethtool_sset(phydev, &ecmd);
+
+	case ETHTOOL_NWAY_RST:
+		/* if autoneg is off, it's an error */
+		tmp = phy_read(phydev, MII_BMCR);
+		if (tmp & BMCR_ANENABLE) {
+			tmp |= (BMCR_ANRESTART);
+			phy_write(phydev, MII_BMCR, tmp);
+			return 0;
+		}
+		return -EINVAL;
+
+	case ETHTOOL_GLINK:
+		edata.data = (phy_read(phydev,
+				MII_BMSR) & BMSR_LSTATUS) ? 1 : 0;
+		if (copy_to_user(useraddr, &edata, sizeof(edata)))
+			return -EFAULT;
+		return 0;
+	}
+
+	return -EOPNOTSUPP;
+}
+EXPORT_SYMBOL(phy_ethtool_ioctl);
 
 /**
  * phy_mii_ioctl - generic PHY MII ioctl interface
@@ -962,6 +1009,12 @@ static int phy_read_mmd_indirect(struct mii_bus *bus, int prtad, int devad,
 	return ret;
 }
 
+int phy_read_mmd(struct phy_device *phydev, int prtad, int devad, int addr)
+{
+	return phy_read_mmd_indirect(phydev->bus, prtad, devad, phydev->addr);
+}
+EXPORT_SYMBOL(phy_read_mmd);
+
 /**
  * phy_write_mmd_indirect - writes data to the MMD registers
  * @bus: the target MII bus
@@ -986,6 +1039,12 @@ static void phy_write_mmd_indirect(struct mii_bus *bus, int prtad, int devad,
 	/* Write the data into MMD's selected register */
 	bus->write(bus, addr, MII_MMD_DATA, data);
 }
+
+void phy_write_mmd(struct phy_device *phydev, int prtad, int devad, u16 data)
+{
+	phy_write_mmd_indirect(phydev->bus, prtad, devad, phydev->addr, data);
+}
+EXPORT_SYMBOL(phy_write_mmd);
 
 /**
  * phy_init_eee - init and check the EEE feature

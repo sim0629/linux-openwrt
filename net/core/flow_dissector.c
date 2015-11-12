@@ -65,6 +65,7 @@ ipv6:
 		nhoff += sizeof(struct ipv6hdr);
 		break;
 	}
+	case __constant_htons(ETH_P_8021AD):
 	case __constant_htons(ETH_P_8021Q): {
 		const struct vlan_hdr *vlan;
 		struct vlan_hdr _vlan;
@@ -139,7 +140,11 @@ ipv6:
 		break;
 	}
 	case IPPROTO_IPIP:
-		goto again;
+		proto = htons(ETH_P_IP);
+		goto ip;
+	case IPPROTO_IPV6:
+		proto = htons(ETH_P_IPV6);
+		goto ipv6;
 	default:
 		break;
 	}
@@ -152,7 +157,7 @@ ipv6:
 		ports = skb_header_pointer(skb, nhoff + poff,
 					   sizeof(_ports), &_ports);
 		if (ports)
-			flow->ports = *ports;
+			flow->ports = net_hdr_word(ports);
 	}
 
 	flow->thoff = (u16) nhoff;

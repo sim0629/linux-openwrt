@@ -43,7 +43,7 @@ struct prefix_info {
 	__be32			reserved2;
 
 	struct in6_addr		prefix;
-};
+} __attribute__((packed, aligned(2)));
 
 
 #include <linux/netdevice.h>
@@ -102,6 +102,12 @@ extern void			addrconf_join_solict(struct net_device *dev,
 					const struct in6_addr *addr);
 extern void			addrconf_leave_solict(struct inet6_dev *idev,
 					const struct in6_addr *addr);
+
+extern int			(*ipv6_dev_get_saddr_hook)(struct net *net,
+						const struct net_device *dev,
+						const struct in6_addr *daddr,
+						unsigned int prefs,
+						struct in6_addr *saddr);
 
 static inline unsigned long addrconf_timeout_fixup(u32 timeout,
 						   unsigned int unit)

@@ -1186,6 +1186,10 @@ config RELAY
 
 	  If unsure, say N.
 
+config CRASHLOG
+	bool "Crash logging"
+	depends on (!NO_BOOTMEM || HAVE_MEMBLOCK) && !(ARM || SPARC || PPC)
+
 config BLK_DEV_INITRD
 	bool "Initial RAM filesystem and RAM disk (initramfs/initrd) support"
 	depends on BROKEN || !FRV
@@ -1244,6 +1248,17 @@ config SYSCTL_ARCH_UNALIGN_ALLOW
 	  Allows arches to define/use @unaligned_enabled to runtime toggle
 	  the unaligned access emulation.
 	  see arch/parisc/kernel/unaligned.c for reference
+
+config KALLSYMS_UNCOMPRESSED
+	bool "Keep kallsyms uncompressed"
+	depends on KALLSYMS
+	help
+		Normally kallsyms contains compressed symbols (using a token table),
+		reducing the uncompressed kernel image size. Keeping the symbol table
+		uncompressed significantly improves the size of this part in compressed
+		kernel images.
+
+		Say N unless you need compressed kernel images to be small.
 
 config HOTPLUG
 	def_bool y
@@ -1771,6 +1786,13 @@ config MODULE_SIG_HASH
 	default "sha256" if MODULE_SIG_SHA256
 	default "sha384" if MODULE_SIG_SHA384
 	default "sha512" if MODULE_SIG_SHA512
+
+config MODULE_STRIPPED
+	bool "Reduce module size"
+	depends on MODULES
+	help
+	  Remove module parameter descriptions, author info, version, aliases,
+	  device tables, etc.
 
 endif # MODULES
 

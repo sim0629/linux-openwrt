@@ -12,10 +12,12 @@
  */
 
 #include <linux/phy.h>
+#include <linux/mdio.h>
 #include <linux/module.h>
 #include <linux/string.h>
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
+#include <linux/platform_data/phy-at803x.h>
 
 #define AT803X_INTR_ENABLE			0x12
 #define AT803X_INTR_STATUS			0x13
@@ -28,9 +30,60 @@
 #define AT803X_MMD_ACCESS_CONTROL_DATA		0x0E
 #define AT803X_FUNC_DATA			0x4003
 
+#define AT803X_PCS_SMART_EEE_CTRL3		0x805D
+
+#define AT803X_SMART_EEE_CTRL3_LPI_TX_DELAY_SEL_MASK   0x3
+#define AT803X_SMART_EEE_CTRL3_LPI_TX_DELAY_SEL_SHIFT  12
+#define AT803X_SMART_EEE_CTRL3_LPI_EN                  BIT(8)
+
+#define AT803X_DEBUG_PORT_ACCESS_OFFSET		0x1D
+#define AT803X_DEBUG_PORT_ACCESS_DATA		0x1E
+
+#define AT803X_DBG0_REG				0x00
+#define AT803X_DBG0_RGMII_RX_CLK_DELAY_EN	BIT(8)
+
+#define AT803X_DBG5_REG				0x05
+#define AT803X_DBG5_RGMII_TX_CLK_DELAY_EN	BIT(8)
+
 MODULE_DESCRIPTION("Atheros 803x PHY driver");
 MODULE_AUTHOR("Matus Ujhelyi");
 MODULE_LICENSE("GPL");
+
+static u16
+at803x_dbg_reg_rmw(struct phy_device *phydev, u16 reg, u16 clear, u16 set)
+{
+	struct mii_bus *bus = phydev->bus;
+	int val;
+
+	mutex_lock(&bus->mdio_lock);
+
+	bus->write(bus, phydev->addr, AT803X_DEBUG_PORT_ACCESS_OFFSET, reg);
+	val = bus->read(bus, phydev->addr, AT803X_DEBUG_PORT_ACCESS_DATA);
+	if (val < 0) {
+		val = 0xffff;
+		goto out;
+	}
+
+	val &= ~clear;
+	val |= set;
+	bus->write(bus, phydev->addr, AT803X_DEBUG_PORT_ACCESS_DATA, val);
+
+out:
+	mutex_unlock(&bus->mdio_lock);
+	return val;
+}
+
+static inline void
+at803x_dbg_reg_set(struct phy_device *phydev, u16 reg, u16 set)
+{
+	at803x_dbg_reg_rmw(phydev, reg, 0, set);
+}
+
+static inline void
+at803x_dbg_reg_clr(struct phy_device *phydev, u16 reg, u16 clear)
+{
+	at803x_dbg_reg_rmw(phydev, reg, clear, 0);
+}
 
 static void at803x_set_wol_mac_addr(struct phy_device *phydev)
 {
@@ -62,8 +115,16 @@ static void at803x_set_wol_mac_addr(struct phy_device *phydev)
 	}
 }
 
+static void at803x_disable_smarteee(struct phy_device *phydev)
+{
+	phy_write_mmd(phydev, MDIO_MMD_PCS, AT803X_PCS_SMART_EEE_CTRL3,
+		      1 << AT803X_SMART_EEE_CTRL3_LPI_TX_DELAY_SEL_SHIFT);
+	phy_write_mmd(phydev, MDIO_MMD_AN, MDIO_AN_EEE_ADV, 0);
+}
+
 static int at803x_config_init(struct phy_device *phydev)
 {
+	struct at803x_platform_data *pdata;
 	int val;
 	u32 features;
 	int status;
@@ -104,6 +165,26 @@ static int at803x_config_init(struct phy_device *phydev)
 	at803x_set_wol_mac_addr(phydev);
 	status = phy_write(phydev, AT803X_INTR_ENABLE, AT803X_WOL_ENABLE);
 	status = phy_read(phydev, AT803X_INTR_STATUS);
+
+	pdata = dev_get_platdata(&phydev->dev);
+	if (pdata) {
+		if (pdata->disable_smarteee)
+			at803x_disable_smarteee(phydev);
+
+		if (pdata->enable_rgmii_rx_delay)
+			at803x_dbg_reg_set(phydev, AT803X_DBG0_REG,
+					   AT803X_DBG0_RGMII_RX_CLK_DELAY_EN);
+		else
+			at803x_dbg_reg_clr(phydev, AT803X_DBG0_REG,
+					   AT803X_DBG0_RGMII_RX_CLK_DELAY_EN);
+
+		if (pdata->enable_rgmii_tx_delay)
+			at803x_dbg_reg_set(phydev, AT803X_DBG5_REG,
+					   AT803X_DBG5_RGMII_TX_CLK_DELAY_EN);
+		else
+			at803x_dbg_reg_clr(phydev, AT803X_DBG5_REG,
+					   AT803X_DBG5_RGMII_TX_CLK_DELAY_EN);
+	}
 
 	return 0;
 }

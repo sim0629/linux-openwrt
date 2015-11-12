@@ -423,6 +423,9 @@ static struct pernet_operations ip_rt_proc_ops __net_initdata =  {
 
 static int __init ip_rt_proc_init(void)
 {
+	if (IS_ENABLED(CONFIG_PROC_STRIPPED))
+		return 0;
+
 	return register_pernet_subsys(&ip_rt_proc_ops);
 }
 
@@ -458,7 +461,7 @@ static struct neighbour *ipv4_neigh_lookup(const struct dst_entry *dst,
 	else if (skb)
 		pkey = &ip_hdr(skb)->daddr;
 
-	n = __ipv4_neigh_lookup(dev, *(__force u32 *)pkey);
+	n = __ipv4_neigh_lookup(dev, net_hdr_word(pkey));
 	if (n)
 		return n;
 	return neigh_create(&arp_tbl, pkey, dev);

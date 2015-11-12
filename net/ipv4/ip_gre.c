@@ -190,13 +190,13 @@ static int parse_gre_header(struct sk_buff *skb, struct tnl_ptk_info *tpi,
 	}
 
 	if (greh->flags & GRE_KEY) {
-		tpi->key = *options;
+		tpi->key = net_hdr_word(options);
 		options++;
 	} else
 		tpi->key = 0;
 
 	if (unlikely(greh->flags & GRE_SEQ)) {
-		tpi->seq = *options;
+		tpi->seq = net_hdr_word(options);
 		options++;
 	} else
 		tpi->seq = 0;

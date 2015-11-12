@@ -10,6 +10,7 @@
  */
 #include <linux/init.h>
 #include <linux/kernel.h>
+#include <linux/export.h>
 #include <linux/clk.h>
 #include <linux/delay.h>
 #include <linux/device.h>
@@ -187,7 +188,7 @@ core_initcall(twd_cpufreq_init);
 
 #endif
 
-static void __cpuinit twd_calibrate_rate(void)
+static int twd_calibrate_rate(void)
 {
 	unsigned long count;
 	u64 waitjiffies;
@@ -224,7 +225,10 @@ static void __cpuinit twd_calibrate_rate(void)
 		printk("%lu.%02luMHz.\n", twd_timer_rate / 1000000,
 			(twd_timer_rate / 10000) % 100);
 	}
+	return 0;
 }
+
+device_initcall(twd_calibrate_rate);
 
 static irqreturn_t twd_handler(int irq, void *dev_id)
 {
@@ -360,6 +364,13 @@ int __init twd_local_timer_register(struct twd_local_timer *tlt)
 
 	return twd_local_timer_common_register(NULL);
 }
+
+/* Needed by mpcore_wdt */
+unsigned long twd_timer_get_rate(void)
+{
+	return twd_timer_rate;
+}
+EXPORT_SYMBOL_GPL(twd_timer_get_rate);
 
 #ifdef CONFIG_OF
 static void __init twd_local_timer_of_register(struct device_node *np)

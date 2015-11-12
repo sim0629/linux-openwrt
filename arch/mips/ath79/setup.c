@@ -40,6 +40,7 @@ static char ath79_sys_type[ATH79_SYS_TYPE_LEN];
 
 static void ath79_restart(char *command)
 {
+	local_irq_disable();
 	ath79_device_reset_set(AR71XX_RESET_FULL_CHIP);
 	for (;;)
 		if (cpu_wait)
@@ -151,6 +152,12 @@ static void __init ath79_detect_sys_type(void)
 		rev = id & AR934X_REV_ID_REVISION_MASK;
 		break;
 
+	case REV_ID_MAJOR_QCA9533:
+		ath79_soc = ATH79_SOC_QCA9533;
+		chip = "9533";
+		rev = id & QCA953X_REV_ID_REVISION_MASK;
+		break;
+
 	case REV_ID_MAJOR_QCA9556:
 		ath79_soc = ATH79_SOC_QCA9556;
 		chip = "9556";
@@ -169,7 +176,7 @@ static void __init ath79_detect_sys_type(void)
 
 	ath79_soc_rev = rev;
 
-	if (soc_is_qca955x())
+	if (soc_is_qca953x() || soc_is_qca955x())
 		sprintf(ath79_sys_type, "Qualcomm Atheros QCA%s rev %u",
 			chip, rev);
 	else
@@ -217,6 +224,8 @@ void __init plat_time_init(void)
 
 	mips_hpt_frequency = clk_get_rate(clk) / 2;
 }
+
+__setup("board=", mips_machtype_setup);
 
 static int __init ath79_setup(void)
 {

@@ -109,10 +109,14 @@ static int gen_74x164_probe(struct spi_device *spi)
 {
 	struct gen_74x164_chip *chip;
 	struct gen_74x164_chip_platform_data *pdata;
+	struct device_node *np;
 	int ret;
 
-	if (!spi->dev.of_node) {
-		dev_err(&spi->dev, "No device tree data available.\n");
+	pdata = spi->dev.platform_data;
+	np = spi->dev.of_node;
+
+	if (!np && !pdata) {
+		dev_err(&spi->dev, "No configuration data available.\n");
 		return -EINVAL;
 	}
 
@@ -129,7 +133,6 @@ static int gen_74x164_probe(struct spi_device *spi)
 	if (!chip)
 		return -ENOMEM;
 
-	pdata = spi->dev.platform_data;
 	if (pdata && pdata->base)
 		chip->gpio_chip.base = pdata->base;
 	else
@@ -146,11 +149,18 @@ static int gen_74x164_probe(struct spi_device *spi)
 	chip->gpio_chip.get = gen_74x164_get_value;
 	chip->gpio_chip.set = gen_74x164_set_value;
 
-	if (of_property_read_u32(spi->dev.of_node, "registers-number", &chip->registers)) {
-		dev_err(&spi->dev, "Missing registers-number property in the DT.\n");
-		ret = -EINVAL;
-		goto exit_destroy;
+	if (np) {
+		if (of_property_read_u32(spi->dev.of_node, "registers-number", &chip->registers)) {
+			dev_err(&spi->dev, "Missing registers-number property in the DT.\n");
+			ret = -EINVAL;
+			goto exit_destroy;
+		}
+	} else if (pdata) {
+		chip->registers = pdata->num_registers;
 	}
+
+	if (!chip->registers)
+		chip->registers = 1;
 
 	chip->gpio_chip.ngpio = GEN_74X164_NUMBER_GPIOS * chip->registers;
 	chip->buffer = devm_kzalloc(&spi->dev, chip->registers, GFP_KERNEL);
@@ -158,6 +168,9 @@ static int gen_74x164_probe(struct spi_device *spi)
 		ret = -ENOMEM;
 		goto exit_destroy;
 	}
+
+	if (pdata && pdata->init_data)
+		memcpy(chip->buffer, pdata->init_data, chip->registers);
 
 	chip->gpio_chip.can_sleep = 1;
 	chip->gpio_chip.dev = &spi->dev;

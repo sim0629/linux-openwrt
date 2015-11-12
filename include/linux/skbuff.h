@@ -1849,7 +1849,7 @@ static inline int pskb_network_may_pull(struct sk_buff *skb, unsigned int len)
  * NET_IP_ALIGN(2) + ethernet_header(14) + IP_header(20/40) + ports(8)
  */
 #ifndef NET_SKB_PAD
-#define NET_SKB_PAD	max(32, L1_CACHE_BYTES)
+#define NET_SKB_PAD	max(64, L1_CACHE_BYTES)
 #endif
 
 extern int ___pskb_trim(struct sk_buff *skb, unsigned int len);
@@ -1879,6 +1879,10 @@ static inline int pskb_trim(struct sk_buff *skb, unsigned int len)
 	return (len < skb->len) ? __pskb_trim(skb, len) : 0;
 }
 
+extern struct sk_buff *__netdev_alloc_skb_ip_align(struct net_device *dev,
+		unsigned int length, gfp_t gfp);
+
+
 /**
  *	pskb_trim_unique - remove end from a paged unique (not cloned) buffer
  *	@skb: buffer to alter
@@ -1892,6 +1896,24 @@ static inline void pskb_trim_unique(struct sk_buff *skb, unsigned int len)
 {
 	int err = pskb_trim(skb, len);
 	BUG_ON(err);
+}
+
+/*
+ * Caller wants to reduce memory needs before queueing skb
+ * The (expensive) copy should not be be done in fast path.
+ */
+static inline struct sk_buff *skb_reduce_truesize(struct sk_buff *skb)
+{
+	if (skb->truesize > 2 * SKB_TRUESIZE(skb->len)) {
+		struct sk_buff *nskb;
+		nskb = skb_copy_expand(skb, skb_headroom(skb), 0,
+			GFP_ATOMIC | __GFP_NOWARN);
+		if (nskb) {
+			__kfree_skb(skb);
+			skb = nskb;
+		}
+	}
+	return skb;
 }
 
 /**
@@ -1984,16 +2006,6 @@ static inline struct sk_buff *dev_alloc_skb(unsigned int length)
 	return netdev_alloc_skb(NULL, length);
 }
 
-
-static inline struct sk_buff *__netdev_alloc_skb_ip_align(struct net_device *dev,
-		unsigned int length, gfp_t gfp)
-{
-	struct sk_buff *skb = __netdev_alloc_skb(dev, length + NET_IP_ALIGN, gfp);
-
-	if (NET_IP_ALIGN && skb)
-		skb_reserve(skb, NET_IP_ALIGN);
-	return skb;
-}
 
 static inline struct sk_buff *netdev_alloc_skb_ip_align(struct net_device *dev,
 		unsigned int length)

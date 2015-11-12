@@ -106,6 +106,7 @@ static void __init ath79_misc_irq_init(void)
 	else if (soc_is_ar724x() ||
 		 soc_is_ar933x() ||
 		 soc_is_ar934x() ||
+		 soc_is_qca953x() ||
 		 soc_is_qca955x())
 		ath79_misc_irq_chip.irq_ack = ar724x_misc_irq_ack;
 	else
@@ -352,6 +353,9 @@ void __init arch_init_irq(void)
 	} else if (soc_is_ar934x()) {
 		ath79_ip2_handler = ath79_default_ip2_handler;
 		ath79_ip3_handler = ar934x_ip3_handler;
+	} else if (soc_is_qca953x()) {
+		ath79_ip2_handler = ath79_default_ip2_handler;
+		ath79_ip3_handler = ath79_default_ip3_handler;
 	} else if (soc_is_qca955x()) {
 		ath79_ip2_handler = ath79_default_ip2_handler;
 		ath79_ip3_handler = ath79_default_ip3_handler;

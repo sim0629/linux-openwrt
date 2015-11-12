@@ -87,10 +87,20 @@ void __init ath79_register_uart(void)
 	if (IS_ERR(clk))
 		panic("unable to get UART clock, err=%ld", PTR_ERR(clk));
 
+	if (soc_is_ar71xx())
+		ath79_gpio_function_enable(AR71XX_GPIO_FUNC_UART_EN);
+	else if (soc_is_ar724x())
+		ath79_gpio_function_enable(AR724X_GPIO_FUNC_UART_EN);
+	else if (soc_is_ar913x())
+		ath79_gpio_function_enable(AR913X_GPIO_FUNC_UART_EN);
+	else if (soc_is_ar933x())
+		ath79_gpio_function_enable(AR933X_GPIO_FUNC_UART_EN);
+
 	if (soc_is_ar71xx() ||
 	    soc_is_ar724x() ||
 	    soc_is_ar913x() ||
 	    soc_is_ar934x() ||
+	    soc_is_qca953x() ||
 	    soc_is_qca955x()) {
 		ath79_uart_data[0].uartclk = clk_get_rate(clk);
 		platform_device_register(&ath79_uart_device);
