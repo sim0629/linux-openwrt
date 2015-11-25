@@ -9,9 +9,9 @@
 TOOLCHAIN_DIR=`pwd`/../cross-root
 OUTPUT_DIR=build_output
 
-mkdir -p build_output
+mkdir -p $OUTPUT_DIR
 export PATH=$TOOLCHAIN_DIR/bin:$PATH
 export STAGING_DIR=$TOOLCHAIN_DIR
-make ${MK} O=build_output ARCH=mips CROSS_COMPILE=mips-openwrt-linux- menuconfig
-make ${MK} O=build_output ARCH=mips CROSS_COMPILE=mips-openwrt-linux- "$@" \
+make ${MK} O=$OUTPUT_DIR ARCH=mips CROSS_COMPILE=mips-openwrt-linux- menuconfig
+make ${MK} O=$OUTPUT_DIR ARCH=mips CROSS_COMPILE=mips-openwrt-linux- "$@" \
 && ./cp_ath9k_drivers.sh
