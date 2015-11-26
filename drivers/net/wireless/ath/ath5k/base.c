@@ -466,6 +466,9 @@ ath5k_chan_set(struct ath5k_hw *ah, struct cfg80211_chan_def *chandef)
 		return -EINVAL;
 	}
 
+	if (ah->ah_bwmode_debug != AR5K_BWMODE_DEFAULT)
+		ah->ah_bwmode = ah->ah_bwmode_debug;
+
 	/*
 	 * To switch channels clear any pending DMA operations;
 	 * wait long enough for the RX fifo to drain, reset the
@@ -1937,7 +1940,7 @@ ath5k_beacon_send(struct ath5k_hw *ah)
 	}
 
 	if ((ah->opmode == NL80211_IFTYPE_AP && ah->num_ap_vifs +
-			ah->num_mesh_vifs > 1) ||
+			ah->num_adhoc_vifs + ah->num_mesh_vifs > 1) ||
 			ah->opmode == NL80211_IFTYPE_MESH_POINT) {
 		u64 tsf = ath5k_hw_get_tsf64(ah);
 		u32 tsftu = TSF_TO_TU(tsf);
@@ -2023,7 +2026,7 @@ ath5k_beacon_update_timers(struct ath5k_hw *ah, u64 bc_tsf)
 
 	intval = ah->bintval & AR5K_BEACON_PERIOD;
 	if (ah->opmode == NL80211_IFTYPE_AP && ah->num_ap_vifs
-		+ ah->num_mesh_vifs > 1) {
+		+ ah->num_adhoc_vifs + ah->num_mesh_vifs > 1) {
 		intval /= ATH_BCBUF;	/* staggered multi-bss beacons */
 		if (intval < 15)
 			ATH5K_WARN(ah, "intval %u is too low, min 15\n",
@@ -2490,6 +2493,7 @@ static const struct ieee80211_iface_limit if_limits[] = {
 				 BIT(NL80211_IFTYPE_MESH_POINT) |
 #endif
 				 BIT(NL80211_IFTYPE_AP) },
+	{ .max = 1,	.types = BIT(NL80211_IFTYPE_ADHOC) },
 };
 
 static const struct ieee80211_iface_combination if_comb = {

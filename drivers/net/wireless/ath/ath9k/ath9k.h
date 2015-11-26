@@ -89,7 +89,7 @@ int ath_descdma_setup(struct ath_softc *sc, struct ath_descdma *dd,
 		(_l) &= ((_sz) - 1);		\
 	} while (0)
 
-#define ATH_RXBUF               512
+#define ATH_RXBUF               256
 #define ATH_TXBUF               512
 #define ATH_TXBUF_RESERVE       5
 #define ATH_MAX_QDEPTH          (ATH_TXBUF / 4 - ATH_TXBUF_RESERVE)
@@ -185,7 +185,8 @@ struct ath_atx_ac {
 
 struct ath_frame_info {
 	struct ath_buf *bf;
-	int framelen;
+	u16 framelen;
+	s8 txq;
 	enum ath9k_key_type keytype;
 	u8 keyix;
 	u8 rtscts_rate;
@@ -564,6 +565,9 @@ static inline int ath9k_dump_btcoex(struct ath_softc *sc, u8 *buf, u32 size)
 void ath_init_leds(struct ath_softc *sc);
 void ath_deinit_leds(struct ath_softc *sc);
 void ath_fill_led_pin(struct ath_softc *sc);
+int ath_create_gpio_led(struct ath_softc *sc, int gpio, const char *name,
+                        const char *trigger, bool active_low);
+
 #else
 static inline void ath_init_leds(struct ath_softc *sc)
 {
@@ -702,6 +706,13 @@ void ath_ant_comb_scan(struct ath_softc *sc, struct ath_rx_status *rs);
 #define PS_BEACON_SYNC            BIT(4)
 #define PS_WAIT_FOR_ANI           BIT(5)
 
+struct ath_led {
+	struct list_head list;
+	struct ath_softc *sc;
+	const struct gpio_led *gpio;
+	struct led_classdev cdev;
+};
+
 struct ath_softc {
 	struct ieee80211_hw *hw;
 	struct device *dev;
@@ -744,9 +755,8 @@ struct ath_softc {
 	struct ath_beacon beacon;
 
 #ifdef CPTCFG_MAC80211_LEDS
-	bool led_registered;
-	char led_name[32];
-	struct led_classdev led_cdev;
+	const char *led_default_trigger;
+	struct list_head leds;
 #endif
 
 	struct ath9k_hw_cal_data caldata;

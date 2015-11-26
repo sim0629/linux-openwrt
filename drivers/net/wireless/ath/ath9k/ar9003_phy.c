@@ -26,20 +26,6 @@ static const int cycpwrThr1_table[] =
 /* level:  0   1   2   3   4   5   6   7   8  */
 	{ -6, -4, -2,  0,  2,  4,  6,  8 };     /* lvl 0-7, default 3 */
 
-/*
- * register values to turn OFDM weak signal detection OFF
- */
-static const int m1ThreshLow_off = 127;
-static const int m2ThreshLow_off = 127;
-static const int m1Thresh_off = 127;
-static const int m2Thresh_off = 127;
-static const int m2CountThr_off =  31;
-static const int m2CountThrLow_off =  63;
-static const int m1ThreshLowExt_off = 127;
-static const int m2ThreshLowExt_off = 127;
-static const int m1ThreshExt_off = 127;
-static const int m2ThreshExt_off = 127;
-
 /**
  * ar9003_hw_set_channel - set channel on single-chip device
  * @ah: atheros hardware structure
@@ -517,6 +503,23 @@ static void ar9003_hw_spur_mitigate(struct ath_hw *ah,
 	ar9003_hw_spur_mitigate_ofdm(ah, chan);
 }
 
+static u32 ar9003_hw_compute_pll_control_soc(struct ath_hw *ah,
+					     struct ath9k_channel *chan)
+{
+	u32 pll;
+
+	pll = SM(0x5, AR_RTC_9300_SOC_PLL_REFDIV);
+
+	if (chan && IS_CHAN_HALF_RATE(chan))
+		pll |= SM(0x1, AR_RTC_9300_SOC_PLL_CLKSEL);
+	else if (chan && IS_CHAN_QUARTER_RATE(chan))
+		pll |= SM(0x2, AR_RTC_9300_SOC_PLL_CLKSEL);
+
+	pll |= SM(0x2c, AR_RTC_9300_SOC_PLL_DIV_INT);
+
+	return pll;
+}
+
 static u32 ar9003_hw_compute_pll_control(struct ath_hw *ah,
 					 struct ath9k_channel *chan)
 {
@@ -647,6 +650,19 @@ static void ar9003_hw_override_ini(struct ath_hw *ah)
 		ah->enabled_cals |= TX_CL_CAL;
 	else
 		ah->enabled_cals &= ~TX_CL_CAL;
+
+	if (AR_SREV_9340(ah) || AR_SREV_9531(ah) || AR_SREV_9550(ah)) {
+		if (ah->is_clk_25mhz) {
+			REG_WRITE(ah, AR_RTC_DERIVED_CLK, 0x17c << 1);
+			REG_WRITE(ah, AR_SLP32_MODE, 0x0010f3d7);
+			REG_WRITE(ah, AR_SLP32_INC, 0x0001e7ae);
+		} else {
+			REG_WRITE(ah, AR_RTC_DERIVED_CLK, 0x261 << 1);
+			REG_WRITE(ah, AR_SLP32_MODE, 0x0010f400);
+			REG_WRITE(ah, AR_SLP32_INC, 0x0001e800);
+		}
+		udelay(100);
+	}
 }
 
 static void ar9003_hw_prog_ini(struct ath_hw *ah,
@@ -954,11 +970,6 @@ static bool ar9003_hw_ani_control(struct ath_hw *ah,
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ath9k_channel *chan = ah->curchan;
 	struct ar5416AniState *aniState = &ah->ani;
-	int m1ThreshLow, m2ThreshLow;
-	int m1Thresh, m2Thresh;
-	int m2CountThr, m2CountThrLow;
-	int m1ThreshLowExt, m2ThreshLowExt;
-	int m1ThreshExt, m2ThreshExt;
 	s32 value, value2;
 
 	switch (cmd & ah->ani_function) {
@@ -972,61 +983,6 @@ static bool ar9003_hw_ani_control(struct ath_hw *ah,
 		 */
 		u32 on = param ? 1 : 0;
 
-		if (AR_SREV_9462(ah) || AR_SREV_9565(ah))
-			goto skip_ws_det;
-
-		m1ThreshLow = on ?
-			aniState->iniDef.m1ThreshLow : m1ThreshLow_off;
-		m2ThreshLow = on ?
-			aniState->iniDef.m2ThreshLow : m2ThreshLow_off;
-		m1Thresh = on ?
-			aniState->iniDef.m1Thresh : m1Thresh_off;
-		m2Thresh = on ?
-			aniState->iniDef.m2Thresh : m2Thresh_off;
-		m2CountThr = on ?
-			aniState->iniDef.m2CountThr : m2CountThr_off;
-		m2CountThrLow = on ?
-			aniState->iniDef.m2CountThrLow : m2CountThrLow_off;
-		m1ThreshLowExt = on ?
-			aniState->iniDef.m1ThreshLowExt : m1ThreshLowExt_off;
-		m2ThreshLowExt = on ?
-			aniState->iniDef.m2ThreshLowExt : m2ThreshLowExt_off;
-		m1ThreshExt = on ?
-			aniState->iniDef.m1ThreshExt : m1ThreshExt_off;
-		m2ThreshExt = on ?
-			aniState->iniDef.m2ThreshExt : m2ThreshExt_off;
-
-		REG_RMW_FIELD(ah, AR_PHY_SFCORR_LOW,
-			      AR_PHY_SFCORR_LOW_M1_THRESH_LOW,
-			      m1ThreshLow);
-		REG_RMW_FIELD(ah, AR_PHY_SFCORR_LOW,
-			      AR_PHY_SFCORR_LOW_M2_THRESH_LOW,
-			      m2ThreshLow);
-		REG_RMW_FIELD(ah, AR_PHY_SFCORR,
-			      AR_PHY_SFCORR_M1_THRESH,
-			      m1Thresh);
-		REG_RMW_FIELD(ah, AR_PHY_SFCORR,
-			      AR_PHY_SFCORR_M2_THRESH,
-			      m2Thresh);
-		REG_RMW_FIELD(ah, AR_PHY_SFCORR,
-			      AR_PHY_SFCORR_M2COUNT_THR,
-			      m2CountThr);
-		REG_RMW_FIELD(ah, AR_PHY_SFCORR_LOW,
-			      AR_PHY_SFCORR_LOW_M2COUNT_THR_LOW,
-			      m2CountThrLow);
-		REG_RMW_FIELD(ah, AR_PHY_SFCORR_EXT,
-			      AR_PHY_SFCORR_EXT_M1_THRESH_LOW,
-			      m1ThreshLowExt);
-		REG_RMW_FIELD(ah, AR_PHY_SFCORR_EXT,
-			      AR_PHY_SFCORR_EXT_M2_THRESH_LOW,
-			      m2ThreshLowExt);
-		REG_RMW_FIELD(ah, AR_PHY_SFCORR_EXT,
-			      AR_PHY_SFCORR_EXT_M1_THRESH,
-			      m1ThreshExt);
-		REG_RMW_FIELD(ah, AR_PHY_SFCORR_EXT,
-			      AR_PHY_SFCORR_EXT_M2_THRESH,
-			      m2ThreshExt);
-skip_ws_det:
 		if (on)
 			REG_SET_BIT(ah, AR_PHY_SFCORR_LOW,
 				    AR_PHY_SFCORR_LOW_USE_SELF_CORR_LOW);
@@ -1764,6 +1720,26 @@ static void ar9003_hw_tx99_set_txpower(struct ath_hw *ah, u8 txpower)
 		  ATH9K_POW_SM(p_pwr_array[ALL_TARGET_HT40_14],  0));
 }
 
+static void ar9003_hw_get_adc_entropy(struct ath_hw *ah, u8 *buf, size_t len)
+{
+	int i, j;
+
+	REG_RMW_FIELD(ah, AR_PHY_TEST, AR_PHY_TEST_BBB_OBS_SEL, 1);
+	REG_CLR_BIT(ah, AR_PHY_TEST, AR_PHY_TEST_RX_OBS_SEL_BIT5);
+	REG_RMW_FIELD(ah, AR_PHY_TEST_CTL_STATUS, AR_PHY_TEST_CTL_RX_OBS_SEL, 0);
+
+	memset(buf, 0, len);
+	for (i = 0; i < len; i++) {
+		for (j = 0; j < 4; j++) {
+			u32 regval = REG_READ(ah, AR_PHY_TST_ADC);
+
+			buf[i] <<= 2;
+			buf[i] |= (regval & 1) | ((regval & BIT(10)) >> 9);
+			udelay(1);
+		}
+	}
+}
+
 void ar9003_hw_attach_phy_ops(struct ath_hw *ah)
 {
 	struct ath_hw_private_ops *priv_ops = ath9k_hw_private_ops(ah);
@@ -1779,7 +1755,12 @@ void ar9003_hw_attach_phy_ops(struct ath_hw *ah)
 
 	priv_ops->rf_set_freq = ar9003_hw_set_channel;
 	priv_ops->spur_mitigate_freq = ar9003_hw_spur_mitigate;
-	priv_ops->compute_pll_control = ar9003_hw_compute_pll_control;
+
+	if (AR_SREV_9340(ah) || AR_SREV_9550(ah) || AR_SREV_9531(ah))
+		priv_ops->compute_pll_control = ar9003_hw_compute_pll_control_soc;
+	else
+		priv_ops->compute_pll_control = ar9003_hw_compute_pll_control;
+
 	priv_ops->set_channel_regs = ar9003_hw_set_channel_regs;
 	priv_ops->init_bb = ar9003_hw_init_bb;
 	priv_ops->process_ini = ar9003_hw_process_ini;
@@ -1794,6 +1775,7 @@ void ar9003_hw_attach_phy_ops(struct ath_hw *ah)
 	priv_ops->set_radar_params = ar9003_hw_set_radar_params;
 	priv_ops->fast_chan_change = ar9003_hw_fast_chan_change;
 
+	ops->get_adc_entropy = ar9003_hw_get_adc_entropy;
 	ops->antdiv_comb_conf_get = ar9003_hw_antdiv_comb_conf_get;
 	ops->antdiv_comb_conf_set = ar9003_hw_antdiv_comb_conf_set;
 	ops->spectral_scan_config = ar9003_hw_spectral_scan_config;

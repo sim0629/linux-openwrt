@@ -820,6 +820,9 @@ struct b43_wldev {
 	bool qos_enabled;		/* TRUE, if QoS is used. */
 	bool hwcrypto_enabled;		/* TRUE, if HW crypto acceleration is enabled. */
 	bool use_pio;			/* TRUE if next init should use PIO */
+	int gpiomask;			/* GPIO LED mask as a module parameter */
+	int rx_antenna;			/* Used RX antenna (B43_ANTENNAxxx) */
+	int tx_antenna;			/* Used TX antenna (B43_ANTENNAxxx) */
 
 	/* PHY/Radio device. */
 	struct b43_phy phy;
@@ -1050,6 +1053,15 @@ static inline bool b43_using_pio_transfers(struct b43_wldev *dev)
 {
 	return dev->__using_pio_transfers;
 }
+
+#ifdef CONFIG_BCM47XX_BCMA
+void b43_wflush16(struct b43_wldev *dev, u16 offset, u16 value);
+#else
+static inline void b43_wflush16(struct b43_wldev *dev, u16 offset, u16 value)
+{
+	b43_write16(dev, offset, value);
+}
+#endif
 
 /* Message printing */
 __printf(2, 3) void b43info(struct b43_wl *wl, const char *fmt, ...);

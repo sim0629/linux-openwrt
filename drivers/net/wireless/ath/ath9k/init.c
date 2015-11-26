@@ -45,7 +45,7 @@ int ath9k_modparam_nohwcrypt;
 module_param_named(nohwcrypt, ath9k_modparam_nohwcrypt, int, 0444);
 MODULE_PARM_DESC(nohwcrypt, "Disable hardware encryption");
 
-int led_blink;
+int led_blink = 1;
 module_param_named(blink, led_blink, int, 0444);
 MODULE_PARM_DESC(blink, "Enable LED blink on activity");
 
@@ -355,6 +355,9 @@ static void ath9k_init_pcoem_platform(struct ath_softc *sc)
 	struct ath9k_hw_capabilities *pCap = &ah->caps;
 	struct ath_common *common = ath9k_hw_common(ah);
 
+	if (!IS_ENABLED(CPTCFG_ATH9K_PCOEM))
+		return;
+
 	if (common->bus_ops->ath_bus_type != ATH_PCI)
 		return;
 
@@ -518,6 +521,10 @@ static int ath9k_init_softc(u16 devid, struct ath_softc *sc,
 		ah->is_clk_25mhz = pdata->is_clk_25mhz;
 		ah->get_mac_revision = pdata->get_mac_revision;
 		ah->external_reset = pdata->external_reset;
+		ah->disable_2ghz = pdata->disable_2ghz;
+		ah->disable_5ghz = pdata->disable_5ghz;
+		if (!pdata->endian_check)
+			ah->ah_flags |= AH_NO_EEP_SWAP;
 	}
 
 	common->ops = &ah->reg_ops;
@@ -642,7 +649,8 @@ static void ath9k_init_txpower_limits(struct ath_softc *sc)
 	if (ah->caps.hw_caps & ATH9K_HW_CAP_5GHZ)
 		ath9k_init_band_txpower(sc, IEEE80211_BAND_5GHZ);
 
-	ah->curchan = curchan;
+	if (curchan)
+		ah->curchan = curchan;
 }
 
 static const struct ieee80211_iface_limit if_limits[] = {
@@ -655,6 +663,7 @@ static const struct ieee80211_iface_limit if_limits[] = {
 				 BIT(NL80211_IFTYPE_AP) },
 	{ .max = 1,	.types = BIT(NL80211_IFTYPE_P2P_CLIENT) |
 				 BIT(NL80211_IFTYPE_P2P_GO) },
+	{ .max = 1,	.types = BIT(NL80211_IFTYPE_ADHOC) },
 };
 
 static const struct ieee80211_iface_limit if_dfs_limits[] = {
@@ -769,6 +778,18 @@ static void ath9k_set_hw_capab(struct ath_softc *sc, struct ieee80211_hw *hw)
 	SET_IEEE80211_PERM_ADDR(hw, common->macaddr);
 }
 
+static void ath_get_initial_entropy(struct ath_softc *sc)
+{
+	struct ath_hw *ah = sc->sc_ah;
+	char buf[256];
+
+	/* reuse last channel initialized by the tx power test */
+	ath9k_hw_reset(ah, ah->curchan, NULL, false);
+
+	ath9k_hw_get_adc_entropy(ah, buf, sizeof(buf));
+	add_device_randomness(buf, sizeof(buf));
+}
+
 int ath9k_init_device(u16 devid, struct ath_softc *sc,
 		    const struct ath_bus_ops *bus_ops)
 {
@@ -812,10 +833,12 @@ int ath9k_init_device(u16 devid, struct ath_softc *sc,
 
 #ifdef CPTCFG_MAC80211_LEDS
 	/* must be initialized before ieee80211_register_hw */
-	sc->led_cdev.default_trigger = ieee80211_create_tpt_led_trigger(sc->hw,
+	sc->led_default_trigger = ieee80211_create_tpt_led_trigger(sc->hw,
 		IEEE80211_TPT_LEDTRIG_FL_RADIO, ath9k_tpt_blink,
 		ARRAY_SIZE(ath9k_tpt_blink));
 #endif
+
+	ath_get_initial_entropy(sc);
 
 	/* Register with mac80211 */
 	error = ieee80211_register_hw(hw);
@@ -901,23 +924,23 @@ static int __init ath9k_init(void)
 {
 	int error;
 
-	error = ath_pci_init();
+	error = ath_ahb_init();
 	if (error < 0) {
-		pr_err("No PCI devices found, driver not installed\n");
 		error = -ENODEV;
 		goto err_out;
 	}
 
-	error = ath_ahb_init();
+	error = ath_pci_init();
 	if (error < 0) {
+		pr_err("No PCI devices found, driver not installed\n");
 		error = -ENODEV;
-		goto err_pci_exit;
+		goto err_ahb_exit;
 	}
 
 	return 0;
 
- err_pci_exit:
-	ath_pci_exit();
+ err_ahb_exit:
+	ath_ahb_exit();
  err_out:
 	return error;
 }

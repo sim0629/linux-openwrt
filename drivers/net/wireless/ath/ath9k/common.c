@@ -296,11 +296,13 @@ EXPORT_SYMBOL(ath9k_cmn_get_hw_crypto_keytype);
 /*
  * Update internal channel flags.
  */
-static void ath9k_cmn_update_ichannel(struct ath9k_channel *ichan,
+static void ath9k_cmn_update_ichannel(struct ath_common *common,
+				      struct ath9k_channel *ichan,
 				      struct cfg80211_chan_def *chandef)
 {
 	struct ieee80211_channel *chan = chandef->chan;
 	u16 flags = 0;
+	int width;
 
 	ichan->channel = chan->center_freq;
 	ichan->chan = chan;
@@ -308,7 +310,19 @@ static void ath9k_cmn_update_ichannel(struct ath9k_channel *ichan,
 	if (chan->band == IEEE80211_BAND_5GHZ)
 		flags |= CHANNEL_5GHZ;
 
-	switch (chandef->width) {
+	switch (common->chan_bw) {
+	case 5:
+		width = NL80211_CHAN_WIDTH_5;
+		break;
+	case 10:
+		width = NL80211_CHAN_WIDTH_10;
+		break;
+	default:
+		width = chandef->width;
+		break;
+	}
+
+	switch (width) {
 	case NL80211_CHAN_WIDTH_5:
 		flags |= CHANNEL_QUARTER;
 		break;
@@ -341,10 +355,11 @@ struct ath9k_channel *ath9k_cmn_get_channel(struct ieee80211_hw *hw,
 					    struct cfg80211_chan_def *chandef)
 {
 	struct ieee80211_channel *curchan = chandef->chan;
+	struct ath_common *common = ath9k_hw_common(ah);
 	struct ath9k_channel *channel;
 
 	channel = &ah->channels[curchan->hw_value];
-	ath9k_cmn_update_ichannel(channel, chandef);
+	ath9k_cmn_update_ichannel(common, channel, chandef);
 
 	return channel;
 }
@@ -368,11 +383,11 @@ void ath9k_cmn_update_txpow(struct ath_hw *ah, u16 cur_txpow,
 {
 	struct ath_regulatory *reg = ath9k_hw_regulatory(ah);
 
-	if (reg->power_limit != new_txpow) {
+	if (reg->power_limit != new_txpow)
 		ath9k_hw_set_txpowerlimit(ah, new_txpow, false);
-		/* read back in case value is clamped */
-		*txpower = reg->max_power_level;
-	}
+
+	/* read back in case value is clamped */
+	*txpower = reg->max_power_level;
 }
 EXPORT_SYMBOL(ath9k_cmn_update_txpow);
 

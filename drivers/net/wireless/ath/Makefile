@@ -13,8 +13,8 @@ ath-objs :=	main.o \
 		regd.o \
 		hw.o \
 		key.o \
+		debug.o \
 		dfs_pattern_detector.o \
 		dfs_pri_detector.o
 
-ath-$(CPTCFG_ATH_DEBUG) += debug.o
 ccflags-y += -D__CHECK_ENDIAN__

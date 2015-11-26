@@ -21,6 +21,9 @@ menuconfig ATH_CARDS
 
 if ATH_CARDS
 
+config ATH_USER_REGD
+	bool "Do not enforce EEPROM regulatory restrictions"
+
 config ATH_DEBUG
 	bool "Atheros wireless debugging"
 	---help---

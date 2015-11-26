@@ -176,6 +176,19 @@ static inline void led_trigger_blink_oneshot(struct led_trigger *trigger,
 					     int invert)
 {
 }
+
+static inline void led_trigger_blink(struct led_trigger *trigger,
+				     unsigned long *delay_on,
+				     unsigned long *delay_off)
+{
+}
+
+static inline void led_trigger_blink_oneshot(struct led_trigger *trigger,
+					     unsigned long *delay_on,
+					     unsigned long *delay_off,
+					     int invert)
+{
+}
 #endif
 
 #endif /* __BACKPORT_LED_DISABLED_SUPPORT */

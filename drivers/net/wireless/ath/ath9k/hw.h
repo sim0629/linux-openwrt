@@ -34,6 +34,7 @@
 
 #define ATHEROS_VENDOR_ID	0x168c
 
+#define AR9300_DEVID_INVALID	0xabcd
 #define AR5416_DEVID_PCI	0x0023
 #define AR5416_DEVID_PCIE	0x0024
 #define AR9160_DEVID_PCI	0x0027
@@ -216,8 +217,8 @@
 #define AH_WOW_BEACON_MISS		BIT(3)
 
 enum ath_hw_txq_subtype {
-	ATH_TXQ_AC_BE = 0,
-	ATH_TXQ_AC_BK = 1,
+	ATH_TXQ_AC_BK = 0,
+	ATH_TXQ_AC_BE = 1,
 	ATH_TXQ_AC_VI = 2,
 	ATH_TXQ_AC_VO = 3,
 };
@@ -243,13 +244,20 @@ enum ath9k_hw_caps {
 	ATH9K_HW_CAP_2GHZ			= BIT(11),
 	ATH9K_HW_CAP_5GHZ			= BIT(12),
 	ATH9K_HW_CAP_APM			= BIT(13),
+#ifdef CPTCFG_ATH9K_PCOEM
 	ATH9K_HW_CAP_RTT			= BIT(14),
 	ATH9K_HW_CAP_MCI			= BIT(15),
-	ATH9K_HW_CAP_DFS			= BIT(16),
-	ATH9K_HW_WOW_DEVICE_CAPABLE		= BIT(17),
-	ATH9K_HW_CAP_PAPRD			= BIT(18),
-	ATH9K_HW_CAP_FCC_BAND_SWITCH		= BIT(19),
-	ATH9K_HW_CAP_BT_ANT_DIV			= BIT(20),
+	ATH9K_HW_WOW_DEVICE_CAPABLE		= BIT(16),
+	ATH9K_HW_CAP_BT_ANT_DIV			= BIT(17),
+#else
+	ATH9K_HW_CAP_RTT			= 0,
+	ATH9K_HW_CAP_MCI			= 0,
+	ATH9K_HW_WOW_DEVICE_CAPABLE		= 0,
+	ATH9K_HW_CAP_BT_ANT_DIV			= 0,
+#endif
+	ATH9K_HW_CAP_DFS			= BIT(18),
+	ATH9K_HW_CAP_PAPRD			= BIT(19),
+	ATH9K_HW_CAP_FCC_BAND_SWITCH		= BIT(20),
 };
 
 /*
@@ -481,6 +489,12 @@ enum {
 	ATH9K_RESET_COLD,
 };
 
+enum {
+	ATH_DIAG_DISABLE_RX,
+	ATH_DIAG_DISABLE_TX,
+	ATH_DIAG_TRIGGER_ERROR,
+};
+
 struct ath9k_hw_version {
 	u32 magic;
 	u16 devid;
@@ -671,6 +685,7 @@ struct ath_spec_scan {
  * @config_pci_powersave:
  * @calibrate: periodic calibration for NF, ANI, IQ, ADC gain, ADC-DC
  *
+ * @get_adc_entropy: get entropy from the raw ADC I/Q output
  * @spectral_scan_config: set parameters for spectral scan and enable/disable it
  * @spectral_scan_trigger: trigger a spectral scan run
  * @spectral_scan_wait: wait for a spectral scan run to finish
@@ -680,10 +695,8 @@ struct ath_hw_ops {
 				     bool power_off);
 	void (*rx_enable)(struct ath_hw *ah);
 	void (*set_desc_link)(void *ds, u32 link);
-	bool (*calibrate)(struct ath_hw *ah,
-			  struct ath9k_channel *chan,
-			  u8 rxchainmask,
-			  bool longcal);
+	int (*calibrate)(struct ath_hw *ah, struct ath9k_channel *chan,
+			 u8 rxchainmask, bool longcal);
 	bool (*get_isr)(struct ath_hw *ah, enum ath9k_int *masked,
 			u32 *sync_cause_p);
 	void (*set_txdesc)(struct ath_hw *ah, void *ds,
@@ -694,6 +707,7 @@ struct ath_hw_ops {
 			struct ath_hw_antcomb_conf *antconf);
 	void (*antdiv_comb_conf_set)(struct ath_hw *ah,
 			struct ath_hw_antcomb_conf *antconf);
+	void (*get_adc_entropy)(struct ath_hw *ah, u8 *buf, size_t len);
 	void (*spectral_scan_config)(struct ath_hw *ah,
 				     struct ath_spec_scan *param);
 	void (*spectral_scan_trigger)(struct ath_hw *ah);
@@ -724,6 +738,7 @@ enum ath_cal_list {
 #define AH_USE_EEPROM   0x1
 #define AH_UNPLUGGED    0x2 /* The card has been physically removed. */
 #define AH_FASTCC       0x4
+#define AH_NO_EEP_SWAP  0x8 /* Do not swap EEPROM data */
 
 struct ath_hw {
 	struct ath_ops reg_ops;
@@ -759,6 +774,8 @@ struct ath_hw {
 	u32 rfkill_gpio;
 	u32 rfkill_polarity;
 	u32 ah_flags;
+
+	unsigned long diag;
 
 	bool reset_power_on;
 	bool htc_reset_init;
@@ -922,6 +939,8 @@ struct ath_hw {
 	bool is_clk_25mhz;
 	int (*get_mac_revision)(void);
 	int (*external_reset)(void);
+	bool disable_2ghz;
+	bool disable_5ghz;
 
 	const struct firmware *eeprom_blob;
 };
@@ -1011,6 +1030,7 @@ void ath9k_hw_check_nav(struct ath_hw *ah);
 bool ath9k_hw_check_alive(struct ath_hw *ah);
 
 bool ath9k_hw_setpower(struct ath_hw *ah, enum ath9k_power_mode mode);
+void ath9k_hw_update_diag(struct ath_hw *ah);
 
 /* Generic hw timer primitives */
 struct ath_gen_timer *ath_gen_timer_alloc(struct ath_hw *ah,

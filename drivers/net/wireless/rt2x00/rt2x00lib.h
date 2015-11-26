@@ -320,6 +320,22 @@ static inline void rt2x00lib_free_firmware(struct rt2x00_dev *rt2x00dev)
 #endif /* CPTCFG_RT2X00_LIB_FIRMWARE */
 
 /*
+ * EEPROM file handlers.
+ */
+#ifdef CPTCFG_RT2X00_LIB_EEPROM
+int rt2x00lib_load_eeprom_file(struct rt2x00_dev *rt2x00dev);
+void rt2x00lib_free_eeprom_file(struct rt2x00_dev *rt2x00dev);
+#else
+static inline int rt2x00lib_load_eeprom_file(struct rt2x00_dev *rt2x00dev)
+{
+	return 0;
+}
+static inline void rt2x00lib_free_eeprom_file(struct rt2x00_dev *rt2x00dev)
+{
+}
+#endif /* CPTCFG_RT2X00_LIB_EEPROM */
+
+/*
  * Debugfs handlers.
  */
 #ifdef CPTCFG_RT2X00_LIB_DEBUGFS

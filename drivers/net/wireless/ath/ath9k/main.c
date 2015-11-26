@@ -310,8 +310,12 @@ static int ath_reset_internal(struct ath_softc *sc, struct ath9k_channel *hchan)
 	    (sc->hw->conf.flags & IEEE80211_CONF_OFFCHANNEL))
 		ath9k_mci_set_txpower(sc, true, false);
 
-	if (!ath_complete_reset(sc, true))
+	if (!ath_complete_reset(sc, true)) {
 		r = -EIO;
+		goto out;
+	}
+
+	sc->hw->cur_power_level = sc->curtxpow / 2;
 
 out:
 	spin_unlock_bh(&sc->sc_pcu_lock);
@@ -602,6 +606,11 @@ irqreturn_t ath_isr(int irq, void *dev)
 	ath9k_debug_sync_cause(sc, sync_cause);
 	status &= ah->imask;	/* discard unasked-for bits */
 
+	if (test_bit(ATH_DIAG_TRIGGER_ERROR, &ah->diag)) {
+		status |= ATH9K_INT_FATAL;
+		clear_bit(ATH_DIAG_TRIGGER_ERROR, &ah->diag);
+	}
+
 	/*
 	 * If there are no status bits set, then this interrupt was not
 	 * for me (should have been caught above).
@@ -619,8 +628,7 @@ irqreturn_t ath_isr(int irq, void *dev)
 	 * If a FATAL or RXORN interrupt is received, we have to reset the
 	 * chip immediately.
 	 */
-	if ((status & ATH9K_INT_FATAL) || ((status & ATH9K_INT_RXORN) &&
-	    !(ah->caps.hw_caps & ATH9K_HW_CAP_EDMA)))
+	if (status & ATH9K_INT_FATAL)
 		goto chip_reset;
 
 	if ((ah->config.hw_hang_checks & HW_BB_WATCHDOG) &&
@@ -1401,10 +1409,14 @@ static int ath9k_config(struct ieee80211_hw *hw, u32 changed)
 	}
 
 	if (changed & IEEE80211_CONF_CHANGE_POWER) {
+		struct ath_regulatory *reg = ath9k_hw_regulatory(ah);
+
 		ath_dbg(common, CONFIG, "Set power: %d\n", conf->power_level);
+		reg->max_antenna_gain = conf->max_antenna_gain;
 		sc->config.txpowlimit = 2 * conf->power_level;
 		ath9k_cmn_update_txpow(ah, sc->curtxpow,
 				       sc->config.txpowlimit, &sc->curtxpow);
+		hw->cur_power_level = sc->curtxpow / 2;
 	}
 
 	mutex_unlock(&sc->mutex);
@@ -1757,7 +1769,6 @@ out:
 void ath9k_update_p2p_ps(struct ath_softc *sc, struct ieee80211_vif *vif)
 {
 	struct ath_vif *avp = (void *)vif->drv_priv;
-	unsigned long flags;
 	u32 tsf;
 
 	if (!sc->p2p_ps_timer)
@@ -1767,14 +1778,9 @@ void ath9k_update_p2p_ps(struct ath_softc *sc, struct ieee80211_vif *vif)
 		return;
 
 	sc->p2p_ps_vif = avp;
-
-	spin_lock_irqsave(&sc->sc_pm_lock, flags);
-	if (!(sc->ps_flags & PS_BEACON_SYNC)) {
-		tsf = ath9k_hw_gettsf32(sc->sc_ah);
-		ieee80211_parse_p2p_noa(&vif->bss_conf.p2p_noa_attr, &avp->noa, tsf);
-		ath9k_update_p2p_ps_timer(sc, avp);
-	}
-	spin_unlock_irqrestore(&sc->sc_pm_lock, flags);
+	tsf = ath9k_hw_gettsf32(sc->sc_ah);
+	ieee80211_parse_p2p_noa(&vif->bss_conf.p2p_noa_attr, &avp->noa, tsf);
+	ath9k_update_p2p_ps_timer(sc, avp);
 }
 
 static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
@@ -1791,6 +1797,7 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 	struct ath_hw *ah = sc->sc_ah;
 	struct ath_common *common = ath9k_hw_common(ah);
 	struct ath_vif *avp = (void *)vif->drv_priv;
+	unsigned long flags;
 	int slottime;
 
 	ath9k_ps_wakeup(sc);
@@ -1853,7 +1860,10 @@ static void ath9k_bss_info_changed(struct ieee80211_hw *hw,
 
 	if (changed & BSS_CHANGED_P2P_PS) {
 		spin_lock_bh(&sc->sc_pcu_lock);
-		ath9k_update_p2p_ps(sc, vif);
+		spin_lock_irqsave(&sc->sc_pm_lock, flags);
+		if (!(sc->ps_flags & PS_BEACON_SYNC))
+			ath9k_update_p2p_ps(sc, vif);
+		spin_unlock_irqrestore(&sc->sc_pm_lock, flags);
 		spin_unlock_bh(&sc->sc_pcu_lock);
 	}
 
@@ -2232,14 +2242,6 @@ static void ath9k_sw_scan_complete(struct ieee80211_hw *hw)
 	clear_bit(ATH_OP_SCANNING, &common->op_flags);
 }
 
-static void ath9k_channel_switch_beacon(struct ieee80211_hw *hw,
-					struct ieee80211_vif *vif,
-					struct cfg80211_chan_def *chandef)
-{
-	/* depend on vif->csa_active only */
-	return;
-}
-
 struct ieee80211_ops ath9k_ops = {
 	.tx 		    = ath9k_tx,
 	.start 		    = ath9k_start,
@@ -2287,5 +2289,4 @@ struct ieee80211_ops ath9k_ops = {
 #endif
 	.sw_scan_start	    = ath9k_sw_scan_start,
 	.sw_scan_complete   = ath9k_sw_scan_complete,
-	.channel_switch_beacon     = ath9k_channel_switch_beacon,
 };

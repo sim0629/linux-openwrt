@@ -19,6 +19,7 @@
 #include <linux/module.h>
 #include <linux/time.h>
 #include <linux/bitops.h>
+#include <linux/etherdevice.h>
 #include <asm/unaligned.h>
 
 #include "hw.h"
@@ -214,6 +215,19 @@ void ath9k_hw_get_channel_centers(struct ath_hw *ah,
 		centers->synth_center + (extoff * HT40_CHANNEL_CENTER_SHIFT);
 }
 
+static inline void ath9k_hw_disable_pll_lock_detect(struct ath_hw *ah)
+{
+	/* On AR9330 and AR9340 devices, some PHY registers must be
+	 * tuned to gain better stability/performance. These registers
+	 * might be changed while doing wlan reset so the registers must
+	 * be reprogrammed after each reset.
+	 */
+	REG_CLR_BIT(ah, AR_PHY_USB_CTRL1, BIT(20));
+	REG_RMW(ah, AR_PHY_USB_CTRL2,
+		(1 << 21) | (0xf << 22),
+		(1 << 21) | (0x3 << 22));
+}
+
 /******************/
 /* Chip Revisions */
 /******************/
@@ -358,13 +372,8 @@ static void ath9k_hw_init_config(struct ath_hw *ah)
 
 	ah->config.rx_intr_mitigation = true;
 
-	if (AR_SREV_9300_20_OR_LATER(ah)) {
-		ah->config.rimt_last = 500;
-		ah->config.rimt_first = 2000;
-	} else {
-		ah->config.rimt_last = 250;
-		ah->config.rimt_first = 700;
-	}
+	ah->config.rimt_last = 250;
+	ah->config.rimt_first = 500;
 
 	/*
 	 * We need this for PCI devices only (Cardbus, PCI, miniPCI)
@@ -449,8 +458,16 @@ static int ath9k_hw_init_macaddr(struct ath_hw *ah)
 		common->macaddr[2 * i] = eeval >> 8;
 		common->macaddr[2 * i + 1] = eeval & 0xff;
 	}
-	if (sum == 0 || sum == 0xffff * 3)
-		return -EADDRNOTAVAIL;
+	if (!is_valid_ether_addr(common->macaddr)) {
+		ath_err(common,
+			"eeprom contains invalid mac address: %pM\n",
+			common->macaddr);
+
+		random_ether_addr(common->macaddr);
+		ath_err(common,
+			"random mac address will be used: %pM\n",
+			common->macaddr);
+	}
 
 	return 0;
 }
@@ -610,6 +627,7 @@ int ath9k_hw_init(struct ath_hw *ah)
 
 	/* These are all the AR5008/AR9001/AR9002/AR9003 hardware family of chipsets */
 	switch (ah->hw_version.devid) {
+	case AR9300_DEVID_INVALID:
 	case AR5416_DEVID_PCI:
 	case AR5416_DEVID_PCIE:
 	case AR5416_AR9100_DEVID:
@@ -702,6 +720,8 @@ static void ath9k_hw_init_pll(struct ath_hw *ah,
 {
 	u32 pll;
 
+	pll = ath9k_hw_compute_pll_control(ah, chan);
+
 	if (AR_SREV_9485(ah) || AR_SREV_9565(ah)) {
 		/* program BB PLL ki and kd value, ki=0x4, kd=0x40 */
 		REG_RMW_FIELD(ah, AR_CH0_BB_DPLL2,
@@ -752,7 +772,8 @@ static void ath9k_hw_init_pll(struct ath_hw *ah,
 		REG_RMW_FIELD(ah, AR_CH0_DDR_DPLL3,
 			      AR_CH0_DPLL3_PHASE_SHIFT, 0x1);
 
-		REG_WRITE(ah, AR_RTC_PLL_CONTROL, 0x1142c);
+		REG_WRITE(ah, AR_RTC_PLL_CONTROL,
+			  pll | AR_RTC_9300_PLL_BYPASS);
 		udelay(1000);
 
 		/* program refdiv, nint, frac to RTC register */
@@ -768,7 +789,8 @@ static void ath9k_hw_init_pll(struct ath_hw *ah,
 	} else if (AR_SREV_9340(ah) || AR_SREV_9550(ah) || AR_SREV_9531(ah)) {
 		u32 regval, pll2_divint, pll2_divfrac, refdiv;
 
-		REG_WRITE(ah, AR_RTC_PLL_CONTROL, 0x1142c);
+		REG_WRITE(ah, AR_RTC_PLL_CONTROL,
+			  pll | AR_RTC_9300_SOC_PLL_BYPASS);
 		udelay(1000);
 
 		REG_SET_BIT(ah, AR_PHY_PLL_MODE, 0x1 << 16);
@@ -840,7 +862,6 @@ static void ath9k_hw_init_pll(struct ath_hw *ah,
 		udelay(1000);
 	}
 
-	pll = ath9k_hw_compute_pll_control(ah, chan);
 	if (AR_SREV_9565(ah))
 		pll |= 0x40000;
 	REG_WRITE(ah, AR_RTC_PLL_CONTROL, pll);
@@ -858,19 +879,6 @@ static void ath9k_hw_init_pll(struct ath_hw *ah,
 	udelay(RTC_PLL_SETTLE_DELAY);
 
 	REG_WRITE(ah, AR_RTC_SLEEP_CLK, AR_RTC_FORCE_DERIVED_CLK);
-
-	if (AR_SREV_9340(ah) || AR_SREV_9550(ah)) {
-		if (ah->is_clk_25mhz) {
-			REG_WRITE(ah, AR_RTC_DERIVED_CLK, 0x17c << 1);
-			REG_WRITE(ah, AR_SLP32_MODE, 0x0010f3d7);
-			REG_WRITE(ah,  AR_SLP32_INC, 0x0001e7ae);
-		} else {
-			REG_WRITE(ah, AR_RTC_DERIVED_CLK, 0x261 << 1);
-			REG_WRITE(ah, AR_SLP32_MODE, 0x0010f400);
-			REG_WRITE(ah,  AR_SLP32_INC, 0x0001e800);
-		}
-		udelay(100);
-	}
 }
 
 static void ath9k_hw_init_interrupt_masks(struct ath_hw *ah,
@@ -1332,6 +1340,9 @@ static bool ath9k_hw_set_reset(struct ath_hw *ah, int type)
 	if (AR_SREV_9100(ah))
 		udelay(50);
 
+	if (AR_SREV_9330(ah) || AR_SREV_9340(ah))
+		ath9k_hw_disable_pll_lock_detect(ah);
+
 	return true;
 }
 
@@ -1430,6 +1441,9 @@ static bool ath9k_hw_chip_reset(struct ath_hw *ah,
 	if (AR_SREV_9330(ah))
 		ar9003_hw_internal_regulator_apply(ah);
 	ath9k_hw_init_pll(ah, chan);
+
+	if (AR_SREV_9330(ah) || AR_SREV_9340(ah))
+		ath9k_hw_disable_pll_lock_detect(ah);
 
 	return true;
 }
@@ -1725,10 +1739,30 @@ static int ath9k_hw_do_fastcc(struct ath_hw *ah, struct ath9k_channel *chan)
 	if (AR_SREV_9271(ah))
 		ar9002_hw_load_ani_reg(ah, chan);
 
+	if (AR_SREV_9330(ah) || AR_SREV_9340(ah))
+		ath9k_hw_disable_pll_lock_detect(ah);
+
 	return 0;
 fail:
+	if (AR_SREV_9330(ah) || AR_SREV_9340(ah))
+		ath9k_hw_disable_pll_lock_detect(ah);
+
 	return -EINVAL;
 }
+
+void ath9k_hw_update_diag(struct ath_hw *ah)
+{
+	if (test_bit(ATH_DIAG_DISABLE_RX, &ah->diag))
+		REG_SET_BIT(ah, AR_DIAG_SW, AR_DIAG_RX_DIS);
+	else
+		REG_CLR_BIT(ah, AR_DIAG_SW, AR_DIAG_RX_DIS);
+
+	if (test_bit(ATH_DIAG_DISABLE_TX, &ah->diag))
+		REG_SET_BIT(ah, AR_DIAG_SW, AR_DIAG_LOOP_BACK);
+	else
+		REG_CLR_BIT(ah, AR_DIAG_SW, AR_DIAG_LOOP_BACK);
+}
+EXPORT_SYMBOL(ath9k_hw_update_diag);
 
 int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 		   struct ath9k_hw_cal_data *caldata, bool fastcc)
@@ -1925,8 +1959,10 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 	if (ath9k_hw_mci_is_enabled(ah))
 		ar9003_mci_check_bt(ah);
 
-	ath9k_hw_loadnf(ah, chan);
-	ath9k_hw_start_nfcal(ah, true);
+	if (AR_SREV_9300_20_OR_LATER(ah)) {
+		ath9k_hw_loadnf(ah, chan);
+		ath9k_hw_start_nfcal(ah, true);
+	}
 
 	if (AR_SREV_9300_20_OR_LATER(ah))
 		ar9003_hw_bb_watchdog_config(ah);
@@ -1935,9 +1971,13 @@ int ath9k_hw_reset(struct ath_hw *ah, struct ath9k_channel *chan,
 		ar9003_hw_disable_phy_restart(ah);
 
 	ath9k_hw_apply_gpio_override(ah);
+	ath9k_hw_update_diag(ah);
 
 	if (AR_SREV_9565(ah) && common->bt_ant_diversity)
 		REG_SET_BIT(ah, AR_BTCOEX_WL_LNADIV, AR_BTCOEX_WL_LNADIV_FORCE_ON);
+
+	if (AR_SREV_9330(ah) || AR_SREV_9340(ah))
+		ath9k_hw_disable_pll_lock_detect(ah);
 
 	return 0;
 }
@@ -2308,17 +2348,25 @@ int ath9k_hw_fill_cap_info(struct ath_hw *ah)
 	}
 
 	eeval = ah->eep_ops->get_eeprom(ah, EEP_OP_MODE);
-	if ((eeval & (AR5416_OPFLAGS_11G | AR5416_OPFLAGS_11A)) == 0) {
-		ath_err(common,
-			"no band has been marked as supported in EEPROM\n");
-		return -EINVAL;
+
+	if (eeval & AR5416_OPFLAGS_11A) {
+		if (ah->disable_5ghz)
+			ath_warn(common, "disabling 5GHz band\n");
+		else
+			pCap->hw_caps |= ATH9K_HW_CAP_5GHZ;
 	}
 
-	if (eeval & AR5416_OPFLAGS_11A)
-		pCap->hw_caps |= ATH9K_HW_CAP_5GHZ;
+	if (eeval & AR5416_OPFLAGS_11G) {
+		if (ah->disable_2ghz)
+			ath_warn(common, "disabling 2GHz band\n");
+		else
+			pCap->hw_caps |= ATH9K_HW_CAP_2GHZ;
+	}
 
-	if (eeval & AR5416_OPFLAGS_11G)
-		pCap->hw_caps |= ATH9K_HW_CAP_2GHZ;
+	if ((pCap->hw_caps & (ATH9K_HW_CAP_2GHZ | ATH9K_HW_CAP_5GHZ)) == 0) {
+		ath_err(common, "both bands are disabled\n");
+		return -EINVAL;
+	}
 
 	if (AR_SREV_9485(ah) ||
 	    AR_SREV_9285(ah) ||
@@ -2716,7 +2764,7 @@ void ath9k_hw_apply_txpower(struct ath_hw *ah, struct ath9k_channel *chan,
 	channel = chan->chan;
 	chan_pwr = min_t(int, channel->max_power * 2, MAX_RATE_POWER);
 	new_pwr = min_t(int, chan_pwr, reg->power_limit);
-	max_gain = chan_pwr - new_pwr + channel->max_antenna_gain * 2;
+	max_gain = chan_pwr - new_pwr + reg->max_antenna_gain * 2;
 
 	ant_gain = get_antenna_gain(ah, chan);
 	if (ant_gain > max_gain)

@@ -399,6 +399,7 @@ int ieee80211_add_virtual_monitor(struct ieee80211_local *local)
 	sdata->vif.type = NL80211_IFTYPE_MONITOR;
 	snprintf(sdata->name, IFNAMSIZ, "%s-monitor",
 		 wiphy_name(local->hw.wiphy));
+	sdata->wdev.iftype = NL80211_IFTYPE_MONITOR;
 
 	sdata->encrypt_headroom = IEEE80211_ENCRYPT_HEADROOM;
 
@@ -928,9 +929,6 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata,
 		 * another CPU.
 		 */
 		ieee80211_free_keys(sdata, true);
-
-		/* fall through */
-	case NL80211_IFTYPE_AP:
 		skb_queue_purge(&sdata->skb_queue);
 	}
 
@@ -1303,6 +1301,7 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 	sdata->control_port_protocol = cpu_to_be16(ETH_P_PAE);
 	sdata->control_port_no_encrypt = false;
 	sdata->encrypt_headroom = IEEE80211_ENCRYPT_HEADROOM;
+	sdata->vif.bss_conf.idle = true;
 
 	sdata->noack_map = 0;
 
@@ -1721,6 +1720,8 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 		ndev->features |= local->hw.netdev_features;
 
+		netdev_set_default_ethtool_ops(ndev, &ieee80211_ethtool_ops);
+
 		ret = register_netdevice(ndev);
 		if (ret) {
 			free_netdev(ndev);
@@ -1796,7 +1797,11 @@ void ieee80211_remove_interfaces(struct ieee80211_local *local)
 	}
 	mutex_unlock(&local->iflist_mtx);
 	unregister_netdevice_many(&unreg_list);
+#if (!(LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,45) && \
+       LINUX_VERSION_CODE < KERNEL_VERSION(3,11,0)) && \
+     (LINUX_VERSION_CODE < KERNEL_VERSION(3,16,0)))
 	list_del(&unreg_list);
+#endif
 
 	list_for_each_entry_safe(sdata, tmp, &wdev_list, list) {
 		list_del(&sdata->list);

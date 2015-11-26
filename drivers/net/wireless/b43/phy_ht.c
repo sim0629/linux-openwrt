@@ -596,7 +596,7 @@ static void b43_phy_ht_tx_power_ctl_setup(struct b43_wldev *dev)
 	u8 target[3];
 	s16 a1[3], b0[3], b1[3];
 
-	u16 freq = dev->phy.channel_freq;
+	u16 freq = dev->phy.chandef->chan->center_freq;
 	int i, c;
 
 	if (b43_current_band(dev->wl) == IEEE80211_BAND_2GHZ) {
@@ -1073,20 +1073,20 @@ static unsigned int b43_phy_ht_op_get_default_chan(struct b43_wldev *dev)
 
 static u16 b43_phy_ht_op_read(struct b43_wldev *dev, u16 reg)
 {
-	b43_write16(dev, B43_MMIO_PHY_CONTROL, reg);
+	b43_wflush16(dev, B43_MMIO_PHY_CONTROL, reg);
 	return b43_read16(dev, B43_MMIO_PHY_DATA);
 }
 
 static void b43_phy_ht_op_write(struct b43_wldev *dev, u16 reg, u16 value)
 {
-	b43_write16(dev, B43_MMIO_PHY_CONTROL, reg);
+	b43_wflush16(dev, B43_MMIO_PHY_CONTROL, reg);
 	b43_write16(dev, B43_MMIO_PHY_DATA, value);
 }
 
 static void b43_phy_ht_op_maskset(struct b43_wldev *dev, u16 reg, u16 mask,
 				 u16 set)
 {
-	b43_write16(dev, B43_MMIO_PHY_CONTROL, reg);
+	b43_wflush16(dev, B43_MMIO_PHY_CONTROL, reg);
 	b43_write16(dev, B43_MMIO_PHY_DATA,
 		    (b43_read16(dev, B43_MMIO_PHY_DATA) & mask) | set);
 }
@@ -1096,14 +1096,14 @@ static u16 b43_phy_ht_op_radio_read(struct b43_wldev *dev, u16 reg)
 	/* HT-PHY needs 0x200 for read access */
 	reg |= 0x200;
 
-	b43_write16(dev, B43_MMIO_RADIO24_CONTROL, reg);
+	b43_wflush16(dev, B43_MMIO_RADIO24_CONTROL, reg);
 	return b43_read16(dev, B43_MMIO_RADIO24_DATA);
 }
 
 static void b43_phy_ht_op_radio_write(struct b43_wldev *dev, u16 reg,
 				      u16 value)
 {
-	b43_write16(dev, B43_MMIO_RADIO24_CONTROL, reg);
+	b43_wflush16(dev, B43_MMIO_RADIO24_CONTROL, reg);
 	b43_write16(dev, B43_MMIO_RADIO24_DATA, value);
 }
 

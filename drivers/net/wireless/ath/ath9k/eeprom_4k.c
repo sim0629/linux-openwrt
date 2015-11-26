@@ -57,7 +57,7 @@ static bool ath9k_hw_4k_fill_eeprom(struct ath_hw *ah)
 {
 	struct ath_common *common = ath9k_hw_common(ah);
 
-	if (!ath9k_hw_use_flash(ah)) {
+	if (!(ah->ah_flags & AH_NO_EEP_SWAP)) {
 		ath_dbg(common, EEPROM, "Reading from EEPROM, not flash\n");
 	}
 

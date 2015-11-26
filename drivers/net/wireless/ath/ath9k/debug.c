@@ -846,36 +846,31 @@ static ssize_t read_file_reset(struct file *file, char __user *user_buf,
 			       size_t count, loff_t *ppos)
 {
 	struct ath_softc *sc = file->private_data;
+	static const char * const reset_cause[__RESET_TYPE_MAX] = {
+		[RESET_TYPE_BB_HANG] = "Baseband Hang",
+		[RESET_TYPE_BB_WATCHDOG] = "Baseband Watchdog",
+		[RESET_TYPE_FATAL_INT] = "Fatal HW Error",
+		[RESET_TYPE_TX_ERROR] = "TX HW error",
+		[RESET_TYPE_TX_GTT] = "Transmit timeout",
+		[RESET_TYPE_TX_HANG] = "TX Path Hang",
+		[RESET_TYPE_PLL_HANG] = "PLL RX Hang",
+		[RESET_TYPE_MAC_HANG] = "MAC Hang",
+		[RESET_TYPE_BEACON_STUCK] = "Stuck Beacon",
+		[RESET_TYPE_MCI] = "MCI Reset",
+		[RESET_TYPE_CALIBRATION] = "Calibration error",
+	};
 	char buf[512];
 	unsigned int len = 0;
+	int i;
 
-	len += scnprintf(buf + len, sizeof(buf) - len,
-			 "%17s: %2d\n", "Baseband Hang",
-			 sc->debug.stats.reset[RESET_TYPE_BB_HANG]);
-	len += scnprintf(buf + len, sizeof(buf) - len,
-			 "%17s: %2d\n", "Baseband Watchdog",
-			 sc->debug.stats.reset[RESET_TYPE_BB_WATCHDOG]);
-	len += scnprintf(buf + len, sizeof(buf) - len,
-			 "%17s: %2d\n", "Fatal HW Error",
-			 sc->debug.stats.reset[RESET_TYPE_FATAL_INT]);
-	len += scnprintf(buf + len, sizeof(buf) - len,
-			 "%17s: %2d\n", "TX HW error",
-			 sc->debug.stats.reset[RESET_TYPE_TX_ERROR]);
-	len += scnprintf(buf + len, sizeof(buf) - len,
-			 "%17s: %2d\n", "TX Path Hang",
-			 sc->debug.stats.reset[RESET_TYPE_TX_HANG]);
-	len += scnprintf(buf + len, sizeof(buf) - len,
-			 "%17s: %2d\n", "PLL RX Hang",
-			 sc->debug.stats.reset[RESET_TYPE_PLL_HANG]);
-	len += scnprintf(buf + len, sizeof(buf) - len,
-			 "%17s: %2d\n", "MAC Hang",
-			 sc->debug.stats.reset[RESET_TYPE_MAC_HANG]);
-	len += scnprintf(buf + len, sizeof(buf) - len,
-			 "%17s: %2d\n", "Stuck Beacon",
-			 sc->debug.stats.reset[RESET_TYPE_BEACON_STUCK]);
-	len += scnprintf(buf + len, sizeof(buf) - len,
-			 "%17s: %2d\n", "MCI Reset",
-			 sc->debug.stats.reset[RESET_TYPE_MCI]);
+	for (i = 0; i < ARRAY_SIZE(reset_cause); i++) {
+		if (!reset_cause[i])
+		    continue;
+
+		len += scnprintf(buf + len, sizeof(buf) - len,
+				 "%17s: %2d\n", reset_cause[i],
+				 sc->debug.stats.reset[i]);
+	}
 
 	if (len > sizeof(buf))
 		len = sizeof(buf);
@@ -1289,6 +1284,198 @@ void ath9k_deinit_debug(struct ath_softc *sc)
 	ath9k_spectral_deinit_debug(sc);
 }
 
+static ssize_t read_file_eeprom(struct file *file, char __user *user_buf,
+			     size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	struct ath_hw *ah = sc->sc_ah;
+	struct ath_common *common = ath9k_hw_common(ah);
+	int bytes = 0;
+	int pos = *ppos;
+	int size = 4096;
+	u16 val;
+	int i;
+
+	if (AR_SREV_9300_20_OR_LATER(ah))
+		size = 16384;
+
+	if (*ppos < 0)
+		return -EINVAL;
+
+	if (count > size - *ppos)
+		count = size - *ppos;
+
+	for (i = *ppos / 2; count > 0; count -= bytes, *ppos += bytes, i++) {
+		void *from = &val;
+
+		if (!common->bus_ops->eeprom_read(common, i, &val))
+			val = 0xffff;
+
+		if (*ppos % 2) {
+			from++;
+			bytes = 1;
+		} else if (count == 1) {
+			bytes = 1;
+		} else {
+			bytes = 2;
+		}
+		copy_to_user(user_buf, from, bytes);
+		user_buf += bytes;
+	}
+	return *ppos - pos;
+}
+
+static const struct file_operations fops_eeprom = {
+	.read = read_file_eeprom,
+	.open = simple_open,
+	.owner = THIS_MODULE
+};
+
+
+static ssize_t read_file_chan_bw(struct file *file, char __user *user_buf,
+			     size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+	char buf[32];
+	unsigned int len;
+
+	len = sprintf(buf, "0x%08x\n", common->chan_bw);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_chan_bw(struct file *file, const char __user *user_buf,
+			     size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+	unsigned long chan_bw;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtoul(buf, 0, &chan_bw))
+		return -EINVAL;
+
+	common->chan_bw = chan_bw;
+	if (!test_bit(ATH_OP_INVALID, &common->op_flags))
+		ath9k_ops.config(sc->hw, IEEE80211_CONF_CHANGE_CHANNEL);
+
+	return count;
+}
+
+static const struct file_operations fops_chanbw = {
+	.read = read_file_chan_bw,
+	.write = write_file_chan_bw,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+#ifdef CONFIG_MAC80211_LEDS
+
+static ssize_t write_file_gpio_led(struct file *file, const char __user *ubuf,
+				   size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	char buf[32], *str, *name, *c;
+	ssize_t len;
+	unsigned int gpio;
+	bool active_low = false;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, ubuf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	name = strchr(buf, ',');
+	if (!name)
+		return -EINVAL;
+
+	*(name++) = 0;
+	if (!*name)
+		return -EINVAL;
+
+	c = strchr(name, '\n');
+	if (c)
+		*c = 0;
+
+	str = buf;
+	if (*str == '!') {
+		str++;
+		active_low = true;
+	}
+
+	if (kstrtouint(str, 0, &gpio) < 0)
+		return -EINVAL;
+
+	if (gpio >= sc->sc_ah->caps.num_gpio_pins)
+		return -EINVAL;
+
+	if (ath_create_gpio_led(sc, gpio, name, NULL, active_low) < 0)
+		return -EINVAL;
+
+	return count;
+}
+
+static const struct file_operations fops_gpio_led = {
+	.write = write_file_gpio_led,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+#endif
+
+
+static ssize_t read_file_diag(struct file *file, char __user *user_buf,
+			     size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	struct ath_hw *ah = sc->sc_ah;
+	char buf[32];
+	unsigned int len;
+
+	len = sprintf(buf, "0x%08lx\n", ah->diag);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t write_file_diag(struct file *file, const char __user *user_buf,
+			     size_t count, loff_t *ppos)
+{
+	struct ath_softc *sc = file->private_data;
+	struct ath_hw *ah = sc->sc_ah;
+	unsigned long diag;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtoul(buf, 0, &diag))
+		return -EINVAL;
+
+	ah->diag = diag;
+	ath9k_hw_update_diag(ah);
+
+	return count;
+}
+
+static const struct file_operations fops_diag = {
+	.read = read_file_diag,
+	.write = write_file_diag,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+
 int ath9k_init_debug(struct ath_hw *ah)
 {
 	struct ath_common *common = ath9k_hw_common(ah);
@@ -1308,6 +1495,16 @@ int ath9k_init_debug(struct ath_hw *ah)
 	ath9k_tx99_init_debug(sc);
 	ath9k_spectral_init_debug(sc);
 
+	debugfs_create_file("eeprom", S_IRUSR, sc->debug.debugfs_phy, sc,
+			    &fops_eeprom);
+	debugfs_create_file("chanbw", S_IRUSR | S_IWUSR, sc->debug.debugfs_phy,
+			    sc, &fops_chanbw);
+#ifdef CONFIG_MAC80211_LEDS
+	debugfs_create_file("gpio_led", S_IWUSR,
+			   sc->debug.debugfs_phy, sc, &fops_gpio_led);
+#endif
+	debugfs_create_file("diag", S_IRUSR | S_IWUSR, sc->debug.debugfs_phy,
+			    sc, &fops_diag);
 	debugfs_create_file("dma", S_IRUSR, sc->debug.debugfs_phy, sc,
 			    &fops_dma);
 	debugfs_create_file("interrupt", S_IRUSR, sc->debug.debugfs_phy, sc,

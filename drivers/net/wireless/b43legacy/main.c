@@ -1937,7 +1937,7 @@ static int b43legacy_gpio_init(struct b43legacy_wldev *dev)
 	if (dev->dev->id.revision >= 2)
 		mask  |= 0x0010; /* FIXME: This is redundant. */
 
-#ifdef CPTCFG_SSB_DRIVER_PCICORE
+#ifdef CONFIG_SSB_DRIVER_PCICORE
 	pcidev = bus->pcicore.dev;
 #endif
 	gpiodev = bus->chipco.dev ? : pcidev;
@@ -1956,7 +1956,7 @@ static void b43legacy_gpio_cleanup(struct b43legacy_wldev *dev)
 	struct ssb_bus *bus = dev->dev->bus;
 	struct ssb_device *gpiodev, *pcidev = NULL;
 
-#ifdef CPTCFG_SSB_DRIVER_PCICORE
+#ifdef CONFIG_SSB_DRIVER_PCICORE
 	pcidev = bus->pcicore.dev;
 #endif
 	gpiodev = bus->chipco.dev ? : pcidev;

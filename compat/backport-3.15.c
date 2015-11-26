@@ -12,6 +12,7 @@
 #include <linux/kernel.h>
 #include <linux/device.h>
 #include <linux/of.h>
+#include <linux/string.h>
 #include <net/net_namespace.h>
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,5,0))

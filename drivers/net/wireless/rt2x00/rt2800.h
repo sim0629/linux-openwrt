@@ -48,10 +48,12 @@
  * RF2853 2.4G/5G 3T3R
  * RF3320 2.4G 1T1R(RT3350/RT3370/RT3390)
  * RF3322 2.4G 2T2R(RT3352/RT3371/RT3372/RT3391/RT3392)
- * RF3053 2.4G/5G 3T3R(RT3883/RT3563/RT3573/RT3593/RT3662)
+ * RF3053 2.4G/5G 3T3R(RT3563/RT3573/RT3593)
+ * RF3853 2.4G/5G 3T3R(RT3883/RT3662)
  * RF5592 2.4G/5G 2T2R
  * RF3070 2.4G 1T1R
  * RF5360 2.4G 1T1R
+ * RF5362 2.4G 1T1R
  * RF5370 2.4G 1T1R
  * RF5390 2.4G 1T1R
  */
@@ -71,11 +73,15 @@
 #define RF5592				0x000f
 #define RF3070				0x3070
 #define RF3290				0x3290
+#define RF3853				0x3853
+#define RF5350				0x5350
 #define RF5360				0x5360
+#define RF5362				0x5362
 #define RF5370				0x5370
 #define RF5372				0x5372
 #define RF5390				0x5390
 #define RF5392				0x5392
+#define RF7620				0x7620
 
 /*
  * Chipset revisions.
@@ -572,6 +578,7 @@
 #define PBF_SYS_CTRL			0x0400
 #define PBF_SYS_CTRL_READY		FIELD32(0x00000080)
 #define PBF_SYS_CTRL_HOST_RAM_WRITE	FIELD32(0x00010000)
+#define PBF_SYS_CTRL_SHR_MSEL		FIELD32(0x00080000)
 
 /*
  * HOST-MCU shared memory
@@ -626,6 +633,20 @@
  */
 #define PBF_DBG				0x043c
 
+/* BCN_OFFSET2 */
+#define BCN_OFFSET2			0x0444
+#define BCN_OFFSET2_BCN8		FIELD32(0x000000ff)
+#define BCN_OFFSET2_BCN9		FIELD32(0x0000ff00)
+#define BCN_OFFSET2_BCN10		FIELD32(0x00ff0000)
+#define BCN_OFFSET2_BCN11		FIELD32(0xff000000)
+
+/* BCN_OFFSET3 */
+#define BCN_OFFSET3			0x0448
+#define BCN_OFFSET3_BCN12		FIELD32(0x000000ff)
+#define BCN_OFFSET3_BCN13		FIELD32(0x0000ff00)
+#define BCN_OFFSET3_BCN14		FIELD32(0x00ff0000)
+#define BCN_OFFSET3_BCN15		FIELD32(0xff000000)
+
 /*
  * RF registers
  */
@@ -634,6 +655,14 @@
 #define RF_CSR_CFG_REGNUM		FIELD32(0x00003f00)
 #define RF_CSR_CFG_WRITE		FIELD32(0x00010000)
 #define RF_CSR_CFG_BUSY			FIELD32(0x00020000)
+
+/*
+ * mt7620 RF registers (reversed order)
+ */
+#define RF_CSR_CFG_DATA_MT7620		FIELD32(0x0000ff00)
+#define RF_CSR_CFG_REGNUM_MT7620	FIELD32(0x03ff0000)
+#define RF_CSR_CFG_WRITE_MT7620		FIELD32(0x00000010)
+#define RF_CSR_CFG_BUSY_MT7620		FIELD32(0x00000001)
 
 /*
  * EFUSE_CSR: RT30x0 EEPROM
@@ -1019,6 +1048,11 @@
 #define AUTOWAKEUP_CFG_AUTOWAKE		FIELD32(0x00008000)
 
 /*
+ * mt7620
+ */
+#define MIMO_PS_CFG			0x1210
+
+/*
  * EDCA_AC0_CFG:
  */
 #define EDCA_AC0_CFG			0x1300
@@ -1198,6 +1232,8 @@
 #define TX_PIN_CFG_RFTR_POL		FIELD32(0x00020000)
 #define TX_PIN_CFG_TRSW_EN		FIELD32(0x00040000)
 #define TX_PIN_CFG_TRSW_POL		FIELD32(0x00080000)
+#define TX_PIN_CFG_RFRX_EN		FIELD32(0x00100000) /* mt7620 */
+#define TX_PIN_CFG_RFRX_POL		FIELD32(0x00200000) /* mt7620 */
 #define TX_PIN_CFG_PA_PE_A2_EN		FIELD32(0x01000000)
 #define TX_PIN_CFG_PA_PE_G2_EN		FIELD32(0x02000000)
 #define TX_PIN_CFG_PA_PE_A2_POL		FIELD32(0x04000000)
@@ -1544,6 +1580,17 @@
 #define TX_PWR_CFG_4_EXT_STBC4_CH2	FIELD32(0x0000000f)
 #define TX_PWR_CFG_4_EXT_STBC6_CH2	FIELD32(0x00000f00)
 
+/* mt7620 */
+#define TX0_RF_GAIN_CORRECT		0x13a0
+#define TX1_RF_GAIN_CORRECT		0x13a4
+#define TX0_RF_GAIN_ATTEN		0x13a8
+#define TX1_RF_GAIN_ATTEN		0x13ac
+#define TX_ALG_CFG_0			0x13b0
+#define TX_ALG_CFG_1			0x13b4
+#define TX0_BB_GAIN_ATTEN		0x13c0
+#define TX1_BB_GAIN_ATTEN		0x13c4
+#define TX_ALC_VGA3			0x13c8
+
 /* TX_PWR_CFG_7 */
 #define TX_PWR_CFG_7			0x13d4
 #define TX_PWR_CFG_7_OFDM54_CH0		FIELD32(0x0000000f)
@@ -1567,6 +1614,20 @@
 #define TX_PWR_CFG_9_STBC7_CH0		FIELD32(0x0000000f)
 #define TX_PWR_CFG_9_STBC7_CH1		FIELD32(0x000000f0)
 #define TX_PWR_CFG_9_STBC7_CH2		FIELD32(0x00000f00)
+
+/*
+ * TX_TXBF_CFG:
+ */
+#define TX_TXBF_CFG_0			0x138c
+#define TX_TXBF_CFG_1			0x13a4
+#define TX_TXBF_CFG_2			0x13a8
+#define TX_TXBF_CFG_3			0x13ac
+
+/*
+ * TX_FBK_CFG_3S:
+ */
+#define TX_FBK_CFG_3S_0			0x13c4
+#define TX_FBK_CFG_3S_1			0x13c8
 
 /*
  * RX_FILTER_CFG: RX configuration register.
@@ -2024,6 +2085,8 @@ struct mac_iveiv_entry {
 	  (((__index) < 6) ? (HW_BEACON_BASE4 + ((__index - 4) * 0x0200)) : \
 	  (HW_BEACON_BASE6 - ((__index - 6) * 0x0200))))
 
+#define HW_BEACON_BASE_HIGH(__index)	(0x4000 + (__index) * 512)
+
 #define BEACON_BASE_TO_OFFSET(_base)	(((_base) - 0x4000) / 64)
 
 /*
@@ -2136,6 +2199,7 @@ struct mac_iveiv_entry {
 /*
  * RFCSR 2:
  */
+#define RFCSR2_RESCAL_BP		FIELD8(0x40)
 #define RFCSR2_RESCAL_EN		FIELD8(0x80)
 
 /*
@@ -2145,7 +2209,7 @@ struct mac_iveiv_entry {
 /* Bits [7-4] for RF3320 (RT3370/RT3390), on other chipsets reserved */
 #define RFCSR3_PA1_BIAS_CCK		FIELD8(0x70)
 #define RFCSR3_PA2_CASCODE_BIAS_CCKK	FIELD8(0x80)
-/* Bits for RF3290/RF5360/RF5370/RF5372/RF5390/RF5392 */
+/* Bits for RF3290/RF5360/RF5362/RF5370/RF5372/RF5390/RF5392 */
 #define RFCSR3_VCOCAL_EN		FIELD8(0x80)
 /* Bits for RF3050 */
 #define RFCSR3_BIT1			FIELD8(0x02)
@@ -2284,6 +2348,8 @@ struct mac_iveiv_entry {
 #define RFCSR30_RX_H20M			FIELD8(0x04)
 #define RFCSR30_RX_VCM			FIELD8(0x18)
 #define RFCSR30_RF_CALIBRATION		FIELD8(0x80)
+#define RF3322_RFCSR30_TX_H20M		FIELD8(0x01)
+#define RF3322_RFCSR30_RX_H20M		FIELD8(0x02)
 
 /*
  * RFCSR 31:
@@ -2299,6 +2365,12 @@ struct mac_iveiv_entry {
 #define RFCSR36_RF_BS			FIELD8(0x80)
 
 /*
+ * RFCSR 34:
+ */
+#define RFCSR34_TX0_EXT_PA		FIELD8(0x04)
+#define RFCSR34_TX1_EXT_PA		FIELD8(0x08)
+
+/*
  * RFCSR 38:
  */
 #define RFCSR38_RX_LO1_EN		FIELD8(0x20)
@@ -2308,6 +2380,18 @@ struct mac_iveiv_entry {
  */
 #define RFCSR39_RX_DIV			FIELD8(0x40)
 #define RFCSR39_RX_LO2_EN		FIELD8(0x80)
+
+/*
+ * RFCSR 41:
+ */
+#define RFCSR41_BIT1			FIELD8(0x01)
+#define RFCSR41_BIT4			FIELD8(0x08)
+
+/*
+ * RFCSR 42:
+ */
+#define RFCSR42_BIT1			FIELD8(0x01)
+#define RFCSR42_BIT4			FIELD8(0x08)
 
 /*
  * RFCSR 49:
@@ -2322,6 +2406,8 @@ struct mac_iveiv_entry {
  * RFCSR 50:
  */
 #define RFCSR50_TX			FIELD8(0x3f)
+#define RFCSR50_TX0_EXT_PA		FIELD8(0x02)
+#define RFCSR50_TX1_EXT_PA		FIELD8(0x10)
 #define RFCSR50_EP			FIELD8(0xc0)
 /* bits for RT3593 */
 #define RFCSR50_TX_LO1_EN		FIELD8(0x20)
@@ -2469,6 +2555,8 @@ enum rt2800_eeprom_word {
  * INTERNAL_TX_ALC: 0: disable, 1: enable
  * BT_COEXIST: 0: disable, 1: enable
  * DAC_TEST: 0: disable, 1: enable
+ * EXTERNAL_TX0_PA: 0: disable, 1: enable (only on RT3352)
+ * EXTERNAL_TX1_PA: 0: disable, 1: enable (only on RT3352)
  */
 #define EEPROM_NIC_CONF1_HW_RADIO		FIELD16(0x0001)
 #define EEPROM_NIC_CONF1_EXTERNAL_TX_ALC	FIELD16(0x0002)
@@ -2485,6 +2573,8 @@ enum rt2800_eeprom_word {
 #define EEPROM_NIC_CONF1_INTERNAL_TX_ALC	FIELD16(0x2000)
 #define EEPROM_NIC_CONF1_BT_COEXIST		FIELD16(0x4000)
 #define EEPROM_NIC_CONF1_DAC_TEST		FIELD16(0x8000)
+#define EEPROM_NIC_CONF1_EXTERNAL_TX0_PA_3352	FIELD16(0x4000)
+#define EEPROM_NIC_CONF1_EXTERNAL_TX1_PA_3352	FIELD16(0x8000)
 
 /*
  * EEPROM frequency
@@ -2957,18 +3047,5 @@ enum rt2800_eeprom_word {
  * the hw beacon timer.
  */
 #define BCN_TBTT_OFFSET 64
-
-/*
- * RT2800 driver data structure
- */
-struct rt2800_drv_data {
-	u8 calibration_bw20;
-	u8 calibration_bw40;
-	u8 bbp25;
-	u8 bbp26;
-	u8 txmixer_gain_24g;
-	u8 txmixer_gain_5g;
-	unsigned int tbtt_tick;
-};
 
 #endif /* RT2800_H */

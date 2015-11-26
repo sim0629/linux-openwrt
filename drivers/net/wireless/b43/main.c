@@ -76,6 +76,11 @@ MODULE_FIRMWARE("b43/ucode16_mimo.fw");
 MODULE_FIRMWARE("b43/ucode5.fw");
 MODULE_FIRMWARE("b43/ucode9.fw");
 
+static int modparam_gpiomask = 0x000F;
+module_param_named(gpiomask, modparam_gpiomask, int, 0444);
+MODULE_PARM_DESC(gpiomask,
+         "GPIO mask for LED control (default 0x000F)");
+
 static int modparam_bad_frames_preempt;
 module_param_named(bad_frames_preempt, modparam_bad_frames_preempt, int, 0444);
 MODULE_PARM_DESC(bad_frames_preempt,
@@ -113,7 +118,7 @@ static int b43_modparam_pio = 0;
 module_param_named(pio, b43_modparam_pio, int, 0644);
 MODULE_PARM_DESC(pio, "Use PIO accesses by default: 0=DMA, 1=PIO");
 
-static int modparam_allhwsupport = !IS_ENABLED(CPTCFG_BRCMSMAC);
+static int modparam_allhwsupport = 1;
 module_param_named(allhwsupport, modparam_allhwsupport, int, 0444);
 MODULE_PARM_DESC(allhwsupport, "Enable support for all hardware (even it if overlaps with the brcmsmac driver)");
 
@@ -122,7 +127,11 @@ static const struct bcma_device_id b43_bcma_tbl[] = {
 	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x11, BCMA_ANY_CLASS),
 	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x17, BCMA_ANY_CLASS),
 	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x18, BCMA_ANY_CLASS),
+	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x1C, BCMA_ANY_CLASS),
 	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x1D, BCMA_ANY_CLASS),
+	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x1E, BCMA_ANY_CLASS),
+	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x28, BCMA_ANY_CLASS),
+	BCMA_CORE(BCMA_MANUF_BCM, BCMA_CORE_80211, 0x2A, BCMA_ANY_CLASS),
 	BCMA_CORETABLE_END
 };
 MODULE_DEVICE_TABLE(bcma, b43_bcma_tbl);
@@ -206,6 +215,9 @@ static struct ieee80211_channel b43_2ghz_chantable[] = {
 	CHAN2G(13, 2472, 0),
 	CHAN2G(14, 2484, 0),
 };
+
+/* No support for the last 3 channels (12, 13, 14) */
+#define b43_2ghz_chantable_limited_size		11
 #undef CHAN2G
 
 #define CHAN4G(_channel, _flags) {				\
@@ -283,6 +295,14 @@ static struct ieee80211_channel b43_5ghz_nphy_chantable[] = {
 	CHAN5G(182, 0),
 };
 
+static struct ieee80211_channel b43_5ghz_nphy_chantable_limited[] = {
+	CHAN5G(36, 0),		CHAN5G(40, 0),
+	CHAN5G(44, 0),		CHAN5G(48, 0),
+	CHAN5G(149, 0),		CHAN5G(153, 0),
+	CHAN5G(157, 0),		CHAN5G(161, 0),
+	CHAN5G(165, 0),
+};
+
 static struct ieee80211_channel b43_5ghz_aphy_chantable[] = {
 	CHAN5G(34, 0),		CHAN5G(36, 0),
 	CHAN5G(38, 0),		CHAN5G(40, 0),
@@ -315,6 +335,14 @@ static struct ieee80211_supported_band b43_band_5GHz_nphy = {
 	.n_bitrates	= b43_a_ratetable_size,
 };
 
+static struct ieee80211_supported_band b43_band_5GHz_nphy_limited = {
+	.band		= IEEE80211_BAND_5GHZ,
+	.channels	= b43_5ghz_nphy_chantable_limited,
+	.n_channels	= ARRAY_SIZE(b43_5ghz_nphy_chantable_limited),
+	.bitrates	= b43_a_ratetable,
+	.n_bitrates	= b43_a_ratetable_size,
+};
+
 static struct ieee80211_supported_band b43_band_5GHz_aphy = {
 	.band		= IEEE80211_BAND_5GHZ,
 	.channels	= b43_5ghz_aphy_chantable,
@@ -327,6 +355,14 @@ static struct ieee80211_supported_band b43_band_2GHz = {
 	.band		= IEEE80211_BAND_2GHZ,
 	.channels	= b43_2ghz_chantable,
 	.n_channels	= ARRAY_SIZE(b43_2ghz_chantable),
+	.bitrates	= b43_g_ratetable,
+	.n_bitrates	= b43_g_ratetable_size,
+};
+
+static struct ieee80211_supported_band b43_band_2ghz_limited = {
+	.band		= IEEE80211_BAND_2GHZ,
+	.channels	= b43_2ghz_chantable,
+	.n_channels	= b43_2ghz_chantable_limited_size,
 	.bitrates	= b43_g_ratetable,
 	.n_bitrates	= b43_g_ratetable_size,
 };
@@ -1551,7 +1587,7 @@ static void b43_write_beacon_template(struct b43_wldev *dev,
 				  len, ram_offset, shm_size_offset, rate);
 
 	/* Write the PHY TX control parameters. */
-	antenna = B43_ANTENNA_DEFAULT;
+	antenna = dev->tx_antenna;
 	antenna = b43_antenna_to_phyctl(antenna);
 	ctl = b43_shm_read16(dev, B43_SHM_SHARED, B43_SHM_SH_BEACPHYCTL);
 	/* We can't send beacons with short preamble. Would get PHY errors. */
@@ -1904,10 +1940,12 @@ static void b43_do_interrupt_thread(struct b43_wldev *dev)
 			dma_reason[0], dma_reason[1],
 			dma_reason[2], dma_reason[3],
 			dma_reason[4], dma_reason[5]);
+#ifdef CPTCFG_B43_PIO
 		b43err(dev->wl, "This device does not support DMA "
 			       "on your system. It will now be switched to PIO.\n");
 		/* Fall back to PIO transfers if we get fatal DMA errors! */
 		dev->use_pio = true;
+#endif
 		b43_controller_restart(dev, "DMA error");
 		return;
 	}
@@ -2201,52 +2239,82 @@ err_format:
 	return -EPROTO;
 }
 
+/* http://bcm-v4.sipsolutions.net/802.11/Init/Firmware */
 static int b43_try_request_fw(struct b43_request_fw_context *ctx)
 {
 	struct b43_wldev *dev = ctx->dev;
 	struct b43_firmware *fw = &ctx->dev->fw;
+	struct b43_phy *phy = &dev->phy;
 	const u8 rev = ctx->dev->dev->core_rev;
 	const char *filename;
-	u32 tmshigh;
 	int err;
 
-	/* Files for HT and LCN were found by trying one by one */
-
 	/* Get microcode */
-	if ((rev >= 5) && (rev <= 10)) {
-		filename = "ucode5";
-	} else if ((rev >= 11) && (rev <= 12)) {
-		filename = "ucode11";
-	} else if (rev == 13) {
-		filename = "ucode13";
-	} else if (rev == 14) {
-		filename = "ucode14";
-	} else if (rev == 15) {
+	filename = NULL;
+	switch (rev) {
+	case 42:
+		if (phy->type == B43_PHYTYPE_AC)
+			filename = "ucode42";
+		break;
+	case 40:
+		if (phy->type == B43_PHYTYPE_AC)
+			filename = "ucode40";
+		break;
+	case 33:
+		if (phy->type == B43_PHYTYPE_LCN40)
+			filename = "ucode33_lcn40";
+		break;
+	case 30:
+		if (phy->type == B43_PHYTYPE_N)
+			filename = "ucode30_mimo";
+		break;
+	case 29:
+		if (phy->type == B43_PHYTYPE_HT)
+			filename = "ucode29_mimo";
+		break;
+	case 26:
+		if (phy->type == B43_PHYTYPE_HT)
+			filename = "ucode26_mimo";
+		break;
+	case 28:
+	case 25:
+		if (phy->type == B43_PHYTYPE_N)
+			filename = "ucode25_mimo";
+		else if (phy->type == B43_PHYTYPE_LCN)
+			filename = "ucode25_lcn";
+		break;
+	case 24:
+		if (phy->type == B43_PHYTYPE_LCN)
+			filename = "ucode24_lcn";
+		break;
+	case 23:
+		if (phy->type == B43_PHYTYPE_N)
+			filename = "ucode16_mimo";
+		break;
+	case 16 ... 19:
+		if (phy->type == B43_PHYTYPE_N)
+			filename = "ucode16_mimo";
+		else if (phy->type == B43_PHYTYPE_LP)
+			filename = "ucode16_lp";
+		break;
+	case 15:
 		filename = "ucode15";
-	} else {
-		switch (dev->phy.type) {
-		case B43_PHYTYPE_N:
-			if (rev >= 16)
-				filename = "ucode16_mimo";
-			else
-				goto err_no_ucode;
-			break;
-		case B43_PHYTYPE_HT:
-			if (rev == 29)
-				filename = "ucode29_mimo";
-			else
-				goto err_no_ucode;
-			break;
-		case B43_PHYTYPE_LCN:
-			if (rev == 24)
-				filename = "ucode24_mimo";
-			else
-				goto err_no_ucode;
-			break;
-		default:
-			goto err_no_ucode;
-		}
+		break;
+	case 14:
+		filename = "ucode14";
+		break;
+	case 13:
+		filename = "ucode13";
+		break;
+	case 11 ... 12:
+		filename = "ucode11";
+		break;
+	case 5 ... 10:
+		filename = "ucode5";
+		break;
 	}
+	if (!filename)
+		goto err_no_ucode;
 	err = b43_do_request_fw(ctx, filename, &fw->ucode, true);
 	if (err)
 		goto err_load;
@@ -2268,117 +2336,121 @@ static int b43_try_request_fw(struct b43_request_fw_context *ctx)
 		goto err_load;
 
 	/* Get initvals */
+	filename = NULL;
 	switch (dev->phy.type) {
-	case B43_PHYTYPE_A:
-		if ((rev >= 5) && (rev <= 10)) {
-			tmshigh = ssb_read32(dev->dev->sdev, SSB_TMSHIGH);
-			if (tmshigh & B43_TMSHIGH_HAVE_2GHZ_PHY)
-				filename = "a0g1initvals5";
-			else
-				filename = "a0g0initvals5";
-		} else
-			goto err_no_initvals;
-		break;
 	case B43_PHYTYPE_G:
-		if ((rev >= 5) && (rev <= 10))
-			filename = "b0g0initvals5";
-		else if (rev >= 13)
+		if (rev == 13)
 			filename = "b0g0initvals13";
-		else
-			goto err_no_initvals;
+		else if (rev >= 5 && rev <= 10)
+			filename = "b0g0initvals5";
 		break;
 	case B43_PHYTYPE_N:
-		if (rev >= 16)
+		if (rev == 30)
+			filename = "n16initvals30";
+		else if (rev == 28 || rev == 25)
+			filename = "n0initvals25";
+		else if (rev == 24)
+			filename = "n0initvals24";
+		else if (rev == 23)
+			filename = "n0initvals16"; /* What about n0initvals22? */
+		else if (rev >= 16 && rev <= 18)
 			filename = "n0initvals16";
-		else if ((rev >= 11) && (rev <= 12))
+		else if (rev >= 11 && rev <= 12)
 			filename = "n0initvals11";
-		else
-			goto err_no_initvals;
 		break;
 	case B43_PHYTYPE_LP:
-		if (rev == 13)
-			filename = "lp0initvals13";
+		if (rev >= 16 && rev <= 18)
+			filename = "lp0initvals16";
+		else if (rev == 15)
+			filename = "lp0initvals15";
 		else if (rev == 14)
 			filename = "lp0initvals14";
-		else if (rev >= 15)
-			filename = "lp0initvals15";
-		else
-			goto err_no_initvals;
+		else if (rev == 13)
+			filename = "lp0initvals13";
 		break;
 	case B43_PHYTYPE_HT:
 		if (rev == 29)
 			filename = "ht0initvals29";
-		else
-			goto err_no_initvals;
+		else if (rev == 26)
+			filename = "ht0initvals26";
 		break;
 	case B43_PHYTYPE_LCN:
 		if (rev == 24)
 			filename = "lcn0initvals24";
-		else
-			goto err_no_initvals;
 		break;
-	default:
-		goto err_no_initvals;
+	case B43_PHYTYPE_LCN40:
+		if (rev == 33)
+			filename = "lcn400initvals33";
+		break;
+	case B43_PHYTYPE_AC:
+		if (rev == 42)
+			filename = "ac1initvals42";
+		else if (rev == 40)
+			filename = "ac0initvals40";
+		break;
 	}
+	if (!filename)
+		goto err_no_initvals;
 	err = b43_do_request_fw(ctx, filename, &fw->initvals, false);
 	if (err)
 		goto err_load;
 
 	/* Get bandswitch initvals */
+	filename = NULL;
 	switch (dev->phy.type) {
-	case B43_PHYTYPE_A:
-		if ((rev >= 5) && (rev <= 10)) {
-			tmshigh = ssb_read32(dev->dev->sdev, SSB_TMSHIGH);
-			if (tmshigh & B43_TMSHIGH_HAVE_2GHZ_PHY)
-				filename = "a0g1bsinitvals5";
-			else
-				filename = "a0g0bsinitvals5";
-		} else if (rev >= 11)
-			filename = NULL;
-		else
-			goto err_no_initvals;
-		break;
 	case B43_PHYTYPE_G:
-		if ((rev >= 5) && (rev <= 10))
+		if (rev == 13)
+			filename = "b0g0bsinitvals13";
+		else if (rev >= 5 && rev <= 10)
 			filename = "b0g0bsinitvals5";
-		else if (rev >= 11)
-			filename = NULL;
-		else
-			goto err_no_initvals;
 		break;
 	case B43_PHYTYPE_N:
-		if (rev >= 16)
+		if (rev == 30)
+			filename = "n16bsinitvals30";
+		else if (rev == 28 || rev == 25)
+			filename = "n0bsinitvals25";
+		else if (rev == 24)
+			filename = "n0bsinitvals24";
+		else if (rev == 23)
+			filename = "n0bsinitvals16"; /* What about n0bsinitvals22? */
+		else if (rev >= 16 && rev <= 18)
 			filename = "n0bsinitvals16";
-		else if ((rev >= 11) && (rev <= 12))
+		else if (rev >= 11 && rev <= 12)
 			filename = "n0bsinitvals11";
-		else
-			goto err_no_initvals;
 		break;
 	case B43_PHYTYPE_LP:
-		if (rev == 13)
-			filename = "lp0bsinitvals13";
+		if (rev >= 16 && rev <= 18)
+			filename = "lp0bsinitvals16";
+		else if (rev == 15)
+			filename = "lp0bsinitvals15";
 		else if (rev == 14)
 			filename = "lp0bsinitvals14";
-		else if (rev >= 15)
-			filename = "lp0bsinitvals15";
-		else
-			goto err_no_initvals;
+		else if (rev == 13)
+			filename = "lp0bsinitvals13";
 		break;
 	case B43_PHYTYPE_HT:
 		if (rev == 29)
 			filename = "ht0bsinitvals29";
-		else
-			goto err_no_initvals;
+		else if (rev == 26)
+			filename = "ht0bsinitvals26";
 		break;
 	case B43_PHYTYPE_LCN:
 		if (rev == 24)
 			filename = "lcn0bsinitvals24";
-		else
-			goto err_no_initvals;
 		break;
-	default:
-		goto err_no_initvals;
+	case B43_PHYTYPE_LCN40:
+		if (rev == 33)
+			filename = "lcn400bsinitvals33";
+		break;
+	case B43_PHYTYPE_AC:
+		if (rev == 42)
+			filename = "ac1bsinitvals42";
+		else if (rev == 40)
+			filename = "ac0bsinitvals40";
+		break;
 	}
+	if (!filename)
+		goto err_no_initvals;
 	err = b43_do_request_fw(ctx, filename, &fw->initvals_band, false);
 	if (err)
 		goto err_load;
@@ -2733,7 +2805,7 @@ static struct ssb_device *b43_ssb_gpio_dev(struct b43_wldev *dev)
 {
 	struct ssb_bus *bus = dev->dev->sdev->bus;
 
-#ifdef CPTCFG_SSB_DRIVER_PCICORE
+#ifdef CONFIG_SSB_DRIVER_PCICORE
 	return (bus->chipco.dev ? bus->chipco.dev : bus->pcicore.dev);
 #else
 	return bus->chipco.dev;
@@ -2749,16 +2821,24 @@ static int b43_gpio_init(struct b43_wldev *dev)
 	u32 mask, set;
 
 	b43_maskset32(dev, B43_MMIO_MACCTL, ~B43_MACCTL_GPOUTSMSK, 0);
-	b43_maskset16(dev, B43_MMIO_GPIO_MASK, ~0, 0xF);
+	b43_maskset16(dev, B43_MMIO_GPIO_MASK, ~0, modparam_gpiomask);
 
 	mask = 0x0000001F;
-	set = 0x0000000F;
+	set = modparam_gpiomask;
 	if (dev->dev->chip_id == 0x4301) {
 		mask |= 0x0060;
 		set |= 0x0060;
 	} else if (dev->dev->chip_id == 0x5354) {
 		/* Don't allow overtaking buttons GPIOs */
 		set &= 0x2; /* 0x2 is LED GPIO on BCM5354 */
+	} else if (dev->dev->chip_id == BCMA_CHIP_ID_BCM4716 || 
+		   dev->dev->chip_id == BCMA_CHIP_ID_BCM47162 ||
+		   dev->dev->chip_id == BCMA_CHIP_ID_BCM5356 ||
+		   dev->dev->chip_id == BCMA_CHIP_ID_BCM5357 ||
+		   dev->dev->chip_id == BCMA_CHIP_ID_BCM53572) {
+		/* just use gpio 0 and 1 for 2.4 GHz wifi led */
+		set &= 0x3;
+		mask &= 0x3;
 	}
 
 	if (0 /* FIXME: conditional unknown */ ) {
@@ -2912,6 +2992,46 @@ void b43_mac_phy_clock_set(struct b43_wldev *dev, bool on)
 		ssb_write32(dev->dev->sdev, SSB_TMSLOW, tmp);
 		break;
 #endif
+	}
+}
+
+/* brcms_b_switch_macfreq */
+void b43_mac_switch_freq(struct b43_wldev *dev, u8 spurmode)
+{
+	u16 chip_id = dev->dev->chip_id;
+
+	if (chip_id == BCMA_CHIP_ID_BCM43131 ||
+	    chip_id == BCMA_CHIP_ID_BCM43217 ||
+	    chip_id == BCMA_CHIP_ID_BCM43222 ||
+	    chip_id == BCMA_CHIP_ID_BCM43224 ||
+	    chip_id == BCMA_CHIP_ID_BCM43225 ||
+	    chip_id == BCMA_CHIP_ID_BCM43227 ||
+	    chip_id == BCMA_CHIP_ID_BCM43228) {
+		switch (spurmode) {
+		case 2: /* 126 Mhz */
+			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_LOW, 0x2082);
+			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_HIGH, 0x8);
+			break;
+		case 1: /* 123 Mhz */
+			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_LOW, 0x5341);
+			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_HIGH, 0x8);
+			break;
+		default: /* 120 Mhz */
+			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_LOW, 0x8889);
+			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_HIGH, 0x8);
+			break;
+		}
+	} else if (dev->phy.type == B43_PHYTYPE_LCN) {
+		switch (spurmode) {
+		case 1: /* 82 Mhz */
+			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_LOW, 0x7CE0);
+			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_HIGH, 0xC);
+			break;
+		default: /* 80 Mhz */
+			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_LOW, 0xCCCD);
+			b43_write16(dev, B43_MMIO_TSF_CLK_FRAC_HIGH, 0xC);
+			break;
+		}
 	}
 }
 
@@ -3106,8 +3226,8 @@ static int b43_chip_init(struct b43_wldev *dev)
 
 	/* Select the antennae */
 	if (phy->ops->set_rx_antenna)
-		phy->ops->set_rx_antenna(dev, B43_ANTENNA_DEFAULT);
-	b43_mgmtframe_txantenna(dev, B43_ANTENNA_DEFAULT);
+		phy->ops->set_rx_antenna(dev, dev->rx_antenna);
+	b43_mgmtframe_txantenna(dev, dev->tx_antenna);
 
 	if (phy->type == B43_PHYTYPE_B) {
 		value16 = b43_read16(dev, 0x005E);
@@ -3742,7 +3862,9 @@ static int b43_switch_band(struct b43_wldev *dev,
 	b43dbg(dev->wl, "Switching to %s GHz band\n",
 	       band_to_string(chan->band));
 
-	b43_software_rfkill(dev, true);
+	/* Some new devices don't need disabling radio for band switching */
+	if (!(phy->type == B43_PHYTYPE_N && phy->rev >= 3))
+		b43_software_rfkill(dev, true);
 
 	phy->gmode = gmode;
 	b43_phy_put_into_reset(dev);
@@ -3796,38 +3918,28 @@ static void b43_set_retry_limits(struct b43_wldev *dev,
 static int b43_op_config(struct ieee80211_hw *hw, u32 changed)
 {
 	struct b43_wl *wl = hw_to_b43_wl(hw);
-	struct b43_wldev *dev;
-	struct b43_phy *phy;
+	struct b43_wldev *dev = wl->current_dev;
+	struct b43_phy *phy = &dev->phy;
 	struct ieee80211_conf *conf = &hw->conf;
-	int antenna;
 	int err = 0;
-	bool reload_bss = false;
 
 	mutex_lock(&wl->mutex);
-
-	dev = wl->current_dev;
-
 	b43_mac_suspend(dev);
 
-	/* Switch the band (if necessary). This might change the active core. */
-	err = b43_switch_band(dev, conf->chandef.chan);
-	if (err)
-		goto out_unlock_mutex;
+	if (changed & IEEE80211_CONF_CHANGE_CHANNEL) {
+		phy->chandef = &conf->chandef;
+		phy->channel = conf->chandef.chan->hw_value;
 
-	/* Need to reload all settings if the core changed */
-	if (dev != wl->current_dev) {
-		dev = wl->current_dev;
-		changed = ~0;
-		reload_bss = true;
+		/* Switch the band (if necessary). */
+		err = b43_switch_band(dev, conf->chandef.chan);
+		if (err)
+			goto out_mac_enable;
+
+		/* Switch to the requested channel.
+		 * The firmware takes care of races with the TX handler.
+		 */
+		b43_switch_channel(dev, phy->channel);
 	}
-
-	phy = &dev->phy;
-
-	if (conf_is_ht(conf))
-		phy->is_40mhz =
-			(conf_is_ht40_minus(conf) || conf_is_ht40_plus(conf));
-	else
-		phy->is_40mhz = false;
 
 	if (changed & IEEE80211_CONF_CHANGE_RETRY_LIMITS)
 		b43_set_retry_limits(dev, conf->short_frame_max_tx_count,
@@ -3835,11 +3947,6 @@ static int b43_op_config(struct ieee80211_hw *hw, u32 changed)
 	changed &= ~IEEE80211_CONF_CHANGE_RETRY_LIMITS;
 	if (!changed)
 		goto out_mac_enable;
-
-	/* Switch to the requested channel.
-	 * The firmware takes care of races with the TX handler. */
-	if (conf->chandef.chan->hw_value != phy->channel)
-		b43_switch_channel(dev, conf->chandef.chan->hw_value);
 
 	dev->wl->radiotap_enabled = !!(conf->flags & IEEE80211_CONF_MONITOR);
 
@@ -3853,11 +3960,9 @@ static int b43_op_config(struct ieee80211_hw *hw, u32 changed)
 	}
 
 	/* Antennas for RX and management frame TX. */
-	antenna = B43_ANTENNA_DEFAULT;
-	b43_mgmtframe_txantenna(dev, antenna);
-	antenna = B43_ANTENNA_DEFAULT;
+	b43_mgmtframe_txantenna(dev, dev->tx_antenna);
 	if (phy->ops->set_rx_antenna)
-		phy->ops->set_rx_antenna(dev, antenna);
+		phy->ops->set_rx_antenna(dev, dev->rx_antenna);
 
 	if (wl->radio_enabled != phy->radio_on) {
 		if (wl->radio_enabled) {
@@ -3876,11 +3981,7 @@ static int b43_op_config(struct ieee80211_hw *hw, u32 changed)
 
 out_mac_enable:
 	b43_mac_enable(dev);
-out_unlock_mutex:
 	mutex_unlock(&wl->mutex);
-
-	if (wl->vif && reload_bss)
-		b43_op_bss_info_changed(hw, wl->vif, &wl->vif->bss_conf, ~0);
 
 	return err;
 }
@@ -4307,13 +4408,15 @@ static char *b43_phy_name(struct b43_wldev *dev, u8 phy_type)
 static int b43_phy_versioning(struct b43_wldev *dev)
 {
 	struct b43_phy *phy = &dev->phy;
+	const u8 core_rev = dev->dev->core_rev;
 	u32 tmp;
 	u8 analog_type;
 	u8 phy_type;
 	u8 phy_rev;
 	u16 radio_manuf;
-	u16 radio_ver;
+	u16 radio_id;
 	u16 radio_rev;
+	u8 radio_ver;
 	int unsupported = 0;
 
 	/* Get PHY versioning */
@@ -4321,23 +4424,23 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 	analog_type = (tmp & B43_PHYVER_ANALOG) >> B43_PHYVER_ANALOG_SHIFT;
 	phy_type = (tmp & B43_PHYVER_TYPE) >> B43_PHYVER_TYPE_SHIFT;
 	phy_rev = (tmp & B43_PHYVER_VERSION);
+
+	/* LCNXN is continuation of N which run out of revisions */
+	if (phy_type == B43_PHYTYPE_LCNXN) {
+		phy_type = B43_PHYTYPE_N;
+		phy_rev += 16;
+	}
+
 	switch (phy_type) {
-	case B43_PHYTYPE_A:
-		if (phy_rev >= 4)
-			unsupported = 1;
-		break;
-	case B43_PHYTYPE_B:
-		if (phy_rev != 2 && phy_rev != 4 && phy_rev != 6
-		    && phy_rev != 7)
-			unsupported = 1;
-		break;
+#ifdef CPTCFG_B43_PHY_G
 	case B43_PHYTYPE_G:
 		if (phy_rev > 9)
 			unsupported = 1;
 		break;
+#endif
 #ifdef CPTCFG_B43_PHY_N
 	case B43_PHYTYPE_N:
-		if (phy_rev > 9)
+		if (phy_rev >= 19)
 			unsupported = 1;
 		break;
 #endif
@@ -4372,20 +4475,28 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 		analog_type, phy_type, b43_phy_name(dev, phy_type), phy_rev);
 
 	/* Get RADIO versioning */
-	if (dev->dev->core_rev >= 24) {
+	if (core_rev == 40 || core_rev == 42) {
+		radio_manuf = 0x17F;
+
+		b43_write16(dev, B43_MMIO_RADIO24_CONTROL, 0);
+		radio_rev = b43_read16(dev, B43_MMIO_RADIO24_DATA);
+
+		b43_write16(dev, B43_MMIO_RADIO24_CONTROL, 1);
+		radio_id = b43_read16(dev, B43_MMIO_RADIO24_DATA);
+
+		radio_ver = 0; /* Is there version somewhere? */
+	} else if (core_rev >= 24) {
 		u16 radio24[3];
 
 		for (tmp = 0; tmp < 3; tmp++) {
-			b43_write16(dev, B43_MMIO_RADIO24_CONTROL, tmp);
+			b43_wflush16(dev, B43_MMIO_RADIO24_CONTROL, tmp);
 			radio24[tmp] = b43_read16(dev, B43_MMIO_RADIO24_DATA);
 		}
 
-		/* Broadcom uses "id" for our "ver" and has separated "ver" */
-		/* radio_ver = (radio24[0] & 0xF0) >> 4; */
-
 		radio_manuf = 0x17F;
-		radio_ver = (radio24[2] << 8) | radio24[1];
+		radio_id = (radio24[2] << 8) | radio24[1];
 		radio_rev = (radio24[0] & 0xF);
+		radio_ver = (radio24[0] & 0xF0) >> 4;
 	} else {
 		if (dev->dev->chip_id == 0x4317) {
 			if (dev->dev->chip_rev == 0)
@@ -4395,24 +4506,25 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 			else
 				tmp = 0x5205017F;
 		} else {
-			b43_write16(dev, B43_MMIO_RADIO_CONTROL,
+			b43_wflush16(dev, B43_MMIO_RADIO_CONTROL,
 				    B43_RADIOCTL_ID);
 			tmp = b43_read16(dev, B43_MMIO_RADIO_DATA_LOW);
-			b43_write16(dev, B43_MMIO_RADIO_CONTROL,
+			b43_wflush16(dev, B43_MMIO_RADIO_CONTROL,
 				    B43_RADIOCTL_ID);
 			tmp |= (u32)b43_read16(dev, B43_MMIO_RADIO_DATA_HIGH)
 				<< 16;
 		}
 		radio_manuf = (tmp & 0x00000FFF);
-		radio_ver = (tmp & 0x0FFFF000) >> 12;
+		radio_id = (tmp & 0x0FFFF000) >> 12;
 		radio_rev = (tmp & 0xF0000000) >> 28;
+		radio_ver = 0; /* Probably not available on old hw */
 	}
 
 	if (radio_manuf != 0x17F /* Broadcom */)
 		unsupported = 1;
 	switch (phy_type) {
 	case B43_PHYTYPE_A:
-		if (radio_ver != 0x2060)
+		if (radio_id != 0x2060)
 			unsupported = 1;
 		if (radio_rev != 1)
 			unsupported = 1;
@@ -4420,43 +4532,49 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 			unsupported = 1;
 		break;
 	case B43_PHYTYPE_B:
-		if ((radio_ver & 0xFFF0) != 0x2050)
+		if ((radio_id & 0xFFF0) != 0x2050)
 			unsupported = 1;
 		break;
 	case B43_PHYTYPE_G:
-		if (radio_ver != 0x2050)
+		if (radio_id != 0x2050)
 			unsupported = 1;
 		break;
 	case B43_PHYTYPE_N:
-		if (radio_ver != 0x2055 && radio_ver != 0x2056)
+		if (radio_id != 0x2055 && radio_id != 0x2056 &&
+		    radio_id != 0x2057)
+			unsupported = 1;
+		if (radio_id == 0x2057 &&
+		    !(radio_rev == 9 || radio_rev == 14))
 			unsupported = 1;
 		break;
 	case B43_PHYTYPE_LP:
-		if (radio_ver != 0x2062 && radio_ver != 0x2063)
+		if (radio_id != 0x2062 && radio_id != 0x2063)
 			unsupported = 1;
 		break;
 	case B43_PHYTYPE_HT:
-		if (radio_ver != 0x2059)
+		if (radio_id != 0x2059)
 			unsupported = 1;
 		break;
 	case B43_PHYTYPE_LCN:
-		if (radio_ver != 0x2064)
+		if (radio_id != 0x2064)
 			unsupported = 1;
 		break;
 	default:
 		B43_WARN_ON(1);
 	}
 	if (unsupported) {
-		b43err(dev->wl, "FOUND UNSUPPORTED RADIO "
-		       "(Manuf 0x%X, Version 0x%X, Revision %u)\n",
-		       radio_manuf, radio_ver, radio_rev);
+		b43err(dev->wl,
+		       "FOUND UNSUPPORTED RADIO (Manuf 0x%X, ID 0x%X, Revision %u, Version %u)\n",
+		       radio_manuf, radio_id, radio_rev, radio_ver);
 		return -EOPNOTSUPP;
 	}
-	b43dbg(dev->wl, "Found Radio: Manuf 0x%X, Version 0x%X, Revision %u\n",
-	       radio_manuf, radio_ver, radio_rev);
+	b43info(dev->wl,
+		"Found Radio: Manuf 0x%X, ID 0x%X, Revision %u, Version %u\n",
+		radio_manuf, radio_id, radio_rev, radio_ver);
 
+	/* FIXME: b43 treats "id" as "ver" and ignores the real "ver" */
 	phy->radio_manuf = radio_manuf;
-	phy->radio_ver = radio_ver;
+	phy->radio_ver = radio_id;
 	phy->radio_rev = radio_rev;
 
 	phy->analog = analog_type;
@@ -4465,6 +4583,26 @@ static int b43_phy_versioning(struct b43_wldev *dev)
 
 	return 0;
 }
+
+/*
+ * bcm4716 (which includes 4717 & 4718), plus 4706 on PCIe can reorder
+ * transactions. As a fix, a read after write is performed on certain places
+ * in the code. Older chips and the newer 5357 family don't require this fix.
+ */
+#ifdef CONFIG_BCM47XX_BCMA
+#include <asm/mach-bcm47xx/bcm47xx.h>
+void b43_wflush16(struct b43_wldev *dev, u16 offset, u16 value)
+{
+	if (b43_bus_host_is_pci(dev->dev) &&
+	    bcm47xx_bus_type == BCM47XX_BUS_TYPE_BCMA &&
+	    bcm47xx_bus.bcma.bus.chipinfo.id == BCMA_CHIP_ID_BCM4716) {
+		b43_write16(dev, offset, value);
+		b43_read16(dev, offset);
+	} else {
+		b43_write16(dev, offset, value);
+	}
+}
+#endif
 
 static void setup_struct_phy_for_init(struct b43_wldev *dev,
 				      struct b43_phy *phy)
@@ -4698,7 +4836,7 @@ static int b43_wireless_core_init(struct b43_wldev *dev)
 	}
 	if (sprom->boardflags_lo & B43_BFL_XTAL_NOSLOW)
 		hf |= B43_HF_DSCRQ; /* Disable slowclock requests from ucode. */
-#if defined(CPTCFG_B43_SSB) && defined(CPTCFG_SSB_DRIVER_PCICORE)
+#if defined(CPTCFG_B43_SSB) && defined(CONFIG_SSB_DRIVER_PCICORE)
 	if (dev->dev->bus_type == B43_BUS_SSB &&
 	    dev->dev->sdev->bus->bustype == SSB_BUSTYPE_PCI &&
 	    dev->dev->sdev->bus->pcicore.dev->id.revision <= 10)
@@ -4981,6 +5119,47 @@ static int b43_op_get_survey(struct ieee80211_hw *hw, int idx,
 	return 0;
 }
 
+static int b43_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant)
+{
+	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev = wl->current_dev;
+
+	if (tx_ant == 1 && rx_ant == 1) {
+		dev->tx_antenna = B43_ANTENNA0;
+		dev->rx_antenna = B43_ANTENNA0;
+	}
+	else if (tx_ant == 2 && rx_ant == 2) {
+		dev->tx_antenna = B43_ANTENNA1;
+		dev->rx_antenna = B43_ANTENNA1;
+	}
+	else if ((tx_ant & 3) == 3 && (rx_ant & 3) == 3) {
+		dev->tx_antenna = B43_ANTENNA_DEFAULT;
+		dev->rx_antenna = B43_ANTENNA_DEFAULT;
+	}
+	else {
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+
+static int b43_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant)
+{
+	struct b43_wl *wl = hw_to_b43_wl(hw);
+	struct b43_wldev *dev = wl->current_dev;
+
+	switch (dev->tx_antenna) {
+	case B43_ANTENNA0:
+		*tx_ant = 1; *rx_ant = 1; break;
+	case B43_ANTENNA1:
+		*tx_ant = 2; *rx_ant = 2; break;
+	case B43_ANTENNA_DEFAULT:
+		*tx_ant = 3; *rx_ant = 3; break;
+	}
+	return 0;
+}
+
 static const struct ieee80211_ops b43_hw_ops = {
 	.tx			= b43_op_tx,
 	.conf_tx		= b43_op_conf_tx,
@@ -5002,6 +5181,8 @@ static const struct ieee80211_ops b43_hw_ops = {
 	.sw_scan_complete	= b43_op_sw_scan_complete_notifier,
 	.get_survey		= b43_op_get_survey,
 	.rfkill_poll		= b43_rfkill_poll,
+	.set_antenna		= b43_op_set_antenna,
+	.get_antenna		= b43_op_get_antenna,
 };
 
 /* Hard-reset the chip. Do not call this directly.
@@ -5064,12 +5245,24 @@ static int b43_setup_bands(struct b43_wldev *dev,
 			   bool have_2ghz_phy, bool have_5ghz_phy)
 {
 	struct ieee80211_hw *hw = dev->wl->hw;
+	struct b43_phy *phy = &dev->phy;
+	bool limited_2g;
+	bool limited_5g;
+
+	/* We don't support all 2 GHz channels on some devices */
+	limited_2g = phy->radio_ver == 0x2057 &&
+		     (phy->radio_rev == 9 || phy->radio_rev == 14);
+	limited_5g = phy->radio_ver == 0x2057 &&
+		     phy->radio_rev == 9;
 
 	if (have_2ghz_phy)
-		hw->wiphy->bands[IEEE80211_BAND_2GHZ] = &b43_band_2GHz;
+		hw->wiphy->bands[IEEE80211_BAND_2GHZ] = limited_2g ?
+			&b43_band_2ghz_limited : &b43_band_2GHz;
 	if (dev->phy.type == B43_PHYTYPE_N) {
 		if (have_5ghz_phy)
-			hw->wiphy->bands[IEEE80211_BAND_5GHZ] = &b43_band_5GHz_nphy;
+			hw->wiphy->bands[IEEE80211_BAND_5GHZ] = limited_5g ?
+				&b43_band_5GHz_nphy_limited :
+				&b43_band_5GHz_nphy;
 	} else {
 		if (have_5ghz_phy)
 			hw->wiphy->bands[IEEE80211_BAND_5GHZ] = &b43_band_5GHz_aphy;
@@ -5164,6 +5357,7 @@ static void b43_supported_bands(struct b43_wldev *dev, bool *have_2ghz_phy,
 static int b43_wireless_core_attach(struct b43_wldev *dev)
 {
 	struct b43_wl *wl = dev->wl;
+	struct b43_phy *phy = &dev->phy;
 	int err;
 	u32 tmp;
 	bool have_2ghz_phy = false, have_5ghz_phy = false;
@@ -5180,6 +5374,8 @@ static int b43_wireless_core_attach(struct b43_wldev *dev)
 		b43err(wl, "Bus powerup failed\n");
 		goto out;
 	}
+
+	phy->do_full_init = true;
 
 	/* Try to guess supported bands for the first init needs */
 	switch (dev->dev->bus_type) {
@@ -5214,13 +5410,15 @@ static int b43_wireless_core_attach(struct b43_wldev *dev)
 	b43_supported_bands(dev, &have_2ghz_phy, &have_5ghz_phy);
 
 	/* We don't support 5 GHz on some PHYs yet */
-	switch (dev->phy.type) {
-	case B43_PHYTYPE_A:
-	case B43_PHYTYPE_N:
-	case B43_PHYTYPE_LP:
-	case B43_PHYTYPE_HT:
-		b43warn(wl, "5 GHz band is unsupported on this PHY\n");
-		have_5ghz_phy = false;
+	if (have_5ghz_phy) {
+		switch (dev->phy.type) {
+		case B43_PHYTYPE_A:
+		case B43_PHYTYPE_G:
+		case B43_PHYTYPE_LP:
+		case B43_PHYTYPE_HT:
+			b43warn(wl, "5 GHz band is unsupported on this PHY\n");
+			have_5ghz_phy = false;
+		}
 	}
 
 	if (!have_2ghz_phy && !have_5ghz_phy) {
@@ -5288,6 +5486,8 @@ static int b43_one_core_attach(struct b43_bus_dev *dev, struct b43_wl *wl)
 	if (!wldev)
 		goto out;
 
+	wldev->rx_antenna = B43_ANTENNA_DEFAULT;
+	wldev->tx_antenna = B43_ANTENNA_DEFAULT;
 	wldev->use_pio = b43_modparam_pio;
 	wldev->dev = dev;
 	wldev->wl = wl;
@@ -5377,6 +5577,9 @@ static struct b43_wl *b43_wireless_init(struct b43_bus_dev *dev)
 		BIT(NL80211_IFTYPE_ADHOC);
 
 	hw->wiphy->flags |= WIPHY_FLAG_IBSS_RSN;
+
+	hw->wiphy->available_antennas_rx = 0x3;
+	hw->wiphy->available_antennas_tx = 0x3;
 
 	wl->hw_registred = false;
 	hw->max_rates = 2;

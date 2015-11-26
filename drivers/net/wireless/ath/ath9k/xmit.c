@@ -147,15 +147,13 @@ static void ath_set_rates(struct ieee80211_vif *vif, struct ieee80211_sta *sta,
 static void ath_txq_skb_done(struct ath_softc *sc, struct ath_txq *txq,
 			     struct sk_buff *skb)
 {
-	int q;
+	struct ath_frame_info *fi = get_frame_info(skb);
+	int q = fi->txq;
 
-	q = skb_get_queue_mapping(skb);
-	if (txq == sc->tx.uapsdq)
-		txq = sc->tx.txq_map[q];
-
-	if (txq != sc->tx.txq_map[q])
+	if (q < 0)
 		return;
 
+	txq = sc->tx.txq_map[q];
 	if (WARN_ON(--txq->pending_frames < 0))
 		txq->pending_frames = 0;
 
@@ -887,6 +885,15 @@ ath_tx_get_tid_subframe(struct ath_softc *sc, struct ath_txq *txq,
 
 		tx_info = IEEE80211_SKB_CB(skb);
 		tx_info->flags &= ~IEEE80211_TX_CTL_CLEAR_PS_FILT;
+
+		/*
+		 * No aggregation session is running, but there may be frames
+		 * from a previous session or a failed attempt in the queue.
+		 * Send them out as normal data frames
+		 */
+		if (!tid->active)
+			tx_info->flags &= ~IEEE80211_TX_CTL_AMPDU;
+
 		if (!(tx_info->flags & IEEE80211_TX_CTL_AMPDU)) {
 			bf->bf_state.bf_type = 0;
 			return bf;
@@ -1999,6 +2006,7 @@ static void setup_frame_info(struct ieee80211_hw *hw,
 		an = (struct ath_node *) sta->drv_priv;
 
 	memset(fi, 0, sizeof(*fi));
+	fi->txq = -1;
 	if (hw_key)
 		fi->keyix = hw_key->hw_key_idx;
 	else if (an && ieee80211_is_data(hdr->frame_control) && an->ps_key > 0)
@@ -2150,6 +2158,7 @@ int ath_tx_start(struct ieee80211_hw *hw, struct sk_buff *skb,
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_sta *sta = txctl->sta;
 	struct ieee80211_vif *vif = info->control.vif;
+	struct ath_frame_info *fi = get_frame_info(skb);
 	struct ath_softc *sc = hw->priv;
 	struct ath_txq *txq = txctl->txq;
 	struct ath_atx_tid *tid = NULL;
@@ -2170,11 +2179,13 @@ int ath_tx_start(struct ieee80211_hw *hw, struct sk_buff *skb,
 	q = skb_get_queue_mapping(skb);
 
 	ath_txq_lock(sc, txq);
-	if (txq == sc->tx.txq_map[q] &&
-	    ++txq->pending_frames > sc->tx.txq_max_pending[q] &&
-	    !txq->stopped) {
-		ieee80211_stop_queue(sc->hw, q);
-		txq->stopped = true;
+	if (txq == sc->tx.txq_map[q]) {
+		fi->txq = q;
+		if (++txq->pending_frames > sc->tx.txq_max_pending[q] &&
+		    !txq->stopped) {
+			ieee80211_stop_queue(sc->hw, q);
+			txq->stopped = true;
+		}
 	}
 
 	if (txctl->an && ieee80211_is_data_present(hdr->frame_control))

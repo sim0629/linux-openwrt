@@ -43,6 +43,6 @@ brcmsmac-y := \
 	brcms_trace_events.o \
 	debug.o
 
-brcmsmac-$(CPTCFG_BCMA_DRIVER_GPIO) += led.o
+brcmsmac-$(CONFIG_BCMA_DRIVER_GPIO) += led.o
 
 obj-$(CPTCFG_BRCMSMAC)	+= brcmsmac.o

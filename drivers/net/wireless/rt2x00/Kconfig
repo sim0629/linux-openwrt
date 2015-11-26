@@ -69,6 +69,7 @@ config RT2800PCI
 	select RT2X00_LIB_MMIO
 	select RT2X00_LIB_PCI
 	select RT2X00_LIB_FIRMWARE
+	select RT2X00_LIB_EEPROM
 	select RT2X00_LIB_CRYPTO
 	depends on CRC_CCITT
 	depends on EEPROM_93CX6
@@ -210,13 +211,15 @@ endif
 config RT2800SOC
 	tristate "Ralink WiSoC support"
 	depends on m
-	depends on SOC_RT288X || SOC_RT305X
+	depends on SOC_RT288X || SOC_RT305X || SOC_RT3883 || SOC_MT7620
 	select RT2X00_LIB_SOC
 	select RT2X00_LIB_MMIO
 	select RT2X00_LIB_CRYPTO
 	select RT2X00_LIB_FIRMWARE
+	select RT2X00_LIB_EEPROM
 	select RT2800_LIB
 	select RT2800_LIB_MMIO
+	select MTD if SOC_RT288X || SOC_RT305X
 	---help---
 	  This adds support for Ralink WiSoC devices.
 	  Supported chips: RT2880, RT3050, RT3052, RT3350, RT3352.
@@ -225,36 +228,37 @@ config RT2800SOC
 
 
 config RT2800_LIB
-	tristate
+	tristate "RT2800 USB/PCI support"
 	depends on m
 
 config RT2800_LIB_MMIO
-	tristate
+	tristate "RT2800 MMIO support"
 	depends on m
 	select RT2X00_LIB_MMIO
 	select RT2800_LIB
 
 config RT2X00_LIB_MMIO
-	tristate
+	tristate "RT2x00 MMIO support"
 	depends on m
 
 config RT2X00_LIB_PCI
-	tristate
+	tristate "RT2x00 PCI support"
 	depends on m
 	select RT2X00_LIB
 
 config RT2X00_LIB_SOC
-	tristate
+	tristate "RT2x00 SoC support"
+	depends on SOC_RT288X || SOC_RT305X || SOC_RT3883 || SOC_MT7620
 	depends on m
 	select RT2X00_LIB
 
 config RT2X00_LIB_USB
-	tristate
+	tristate "RT2x00 USB support"
 	depends on m
 	select RT2X00_LIB
 
 config RT2X00_LIB
-	tristate
+	tristate "RT2x00 support"
 	depends on m
 	select BACKPORT_AVERAGE
 
@@ -263,6 +267,9 @@ config RT2X00_LIB_FIRMWARE
 	depends on FW_LOADER
 
 config RT2X00_LIB_CRYPTO
+	boolean
+
+config RT2X00_LIB_EEPROM
 	boolean
 
 config RT2X00_LIB_LEDS
