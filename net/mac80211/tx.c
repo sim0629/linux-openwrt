@@ -1504,6 +1504,31 @@ void ieee80211_xmit(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 
 	may_encrypt = !(info->flags & IEEE80211_TX_INTFL_DONT_ENCRYPT);
 
+	/* 우리가 올바른 방향으로 왔는지 커널 디버그 메시지를 출력해본다.
+	 *
+	 * 여기서 하는 일은, 들어온 socket buffer에 IP header가 제대로 존재하는지,
+	 * 그걸 출력해보는 것이다.
+	 * skb_network_header(skb)를 통해 IP header의 시작 지점을 얻어오고,
+	 * printk로 hexadecimal로 각 바이트를 출력해본다.
+	 *
+	 * 출력 결과가 45 00 .... 등으로 나오면 제대로 된 것이고, 실험 결과
+	 * 제대로 나오는 것을 볼 수 있었다.
+	 * */
+	{
+		int i;
+		char temp[300]="";
+		unsigned char *cur = skb_network_header(skb);
+		unsigned char *end = skb_end_pointer(skb);
+		for (i = 0; i < 40 && cur != end ; i++, cur++) {
+			temp[i*3] = "0123456789ABCDEF"[cur[0]/16];
+			temp[i*3+1] = "0123456789ABCDEF"[cur[0]%16];
+			temp[i*3+2] = ' ';
+		}
+		/*int diff = skb_network_header(skb) - skb->data;*/
+		/*printk(KERN_DEBUG" TX [KCM]: uh! %p-%p = %d\n", skb_network_header(skb), skb->data, diff); */
+		printk(KERN_DEBUG" TX [KCM]: uahahaha, %p %p %s\n", skb_network_header(skb), end, temp);
+	}
+
 	headroom = local->tx_headroom;
 	if (may_encrypt)
 		headroom += sdata->encrypt_headroom;
