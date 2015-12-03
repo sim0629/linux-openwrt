@@ -25,6 +25,9 @@
 #include <net/cfg80211.h>
 #include <net/mac80211.h>
 #include <asm/unaligned.h>
+#include <uapi/linux/tcp.h>
+#include <uapi/linux/ip.h>
+#include <uapi/linux/in.h>
 
 #include "ieee80211_i.h"
 #include "driver-ops.h"
@@ -1493,6 +1496,56 @@ static int ieee80211_skb_resize(struct ieee80211_sub_if_data *sdata,
 	return 0;
 }
 
+/*
+ * Check if skb has network and transport part and skb contains TCP data.
+ * Returns true if so.
+ */
+static bool ieee80211_is_tcp_data(struct sk_buff *skb)
+{
+	unsigned char *nh = skb_network_header(skb);
+	struct iphdr *iphdr = NULL;
+	unsigned char *th = skb_transport_header(skb);
+	struct tcphdr *tcphdr = NULL;
+	unsigned char *tail = skb_tail_pointer(skb);
+	u32 network_header_len = skb_network_header_len(skb);
+	__u16 iplen = 0, data_offset_in_bytes = 0;
+	u32 data_len = 0;
+	/* network_header must contain at least IP header */
+	if (network_header_len < sizeof(struct iphdr))
+		return false;
+
+	iphdr = (struct iphdr *)nh;
+
+	/* check IPv4 */
+	if (iphdr->version != 4)
+		return false;
+	/* check IP header length */
+	if (iphdr->ihl * 4u != network_header_len)
+		return false;
+	/* check packet length */
+	iplen = be16_to_cpu(iphdr->tot_len);
+	if (tail-nh < iplen)
+		return false;
+	/* check protocol */
+	if (iphdr->protocol != IPPROTO_TCP)
+		return false;
+
+	/* check against the minimum tcp header size */
+	if (tail-th < sizeof(struct tcphdr))
+		return false;
+
+	tcphdr = (struct tcphdr *)th;
+	data_offset_in_bytes = tcphdr->doff * 4u;
+
+	/* calculate data length */
+	if (iplen - network_header_len < data_offset_in_bytes)
+		return false;
+	data_len = iplen - network_header_len - data_offset_in_bytes;
+
+	/* we've got data length now */
+	return (data_len > 0);
+}
+
 void ieee80211_xmit(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 		    enum ieee80211_band band)
 {
@@ -1526,7 +1579,8 @@ void ieee80211_xmit(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 		}
 		/*int diff = skb_network_header(skb) - skb->data;*/
 		/*printk(KERN_DEBUG" TX [KCM]: uh! %p-%p = %d\n", skb_network_header(skb), skb->data, diff); */
-		printk(KERN_DEBUG" TX [KCM]: uahahaha, %p %p %s\n", skb_network_header(skb), end, temp);
+		printk(KERN_DEBUG" TX [KCM %d]: uahahaha, %p %p %s\n",
+			ieee80211_is_tcp_data(skb), skb_network_header(skb), end, temp);
 	}
 
 	headroom = local->tx_headroom;
