@@ -22,6 +22,7 @@
 #include <linux/time.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
+#include <linux/if_ether.h>
 #include <net/net_namespace.h>
 #include <net/ieee80211_radiotap.h>
 #include <net/cfg80211.h>
@@ -31,6 +32,7 @@
 #include <uapi/linux/tcp.h>
 #include <uapi/linux/ip.h>
 #include <uapi/linux/in.h>
+#include <uapi/linux/if_ether.h>
 
 #include "ieee80211_i.h"
 #include "driver-ops.h"
@@ -1573,7 +1575,7 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
 	struct sk_buff *buff;
 	struct iphdr *rcv_iphdr = ip_hdr(skb), *ack_iphdr;
 	struct tcphdr *rcv_tcphdr = tcp_hdr(skb), *ack_tcphdr;
-	const size_t mac_len = 20; /* TODO: fix magic mac length */
+	const size_t mac_len = sizeof(struct ethhdr);
 	u32 ip_header_len = sizeof(struct iphdr);
 	u32 tcp_header_len = sizeof(struct tcphdr);
 	u16 ip_len = be16_to_cpu(rcv_iphdr->tot_len);
@@ -1592,22 +1594,26 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
 		skb_push(buff, tcp_header_len);
 		skb_reset_transport_header(buff);
 		ack_tcphdr = tcp_hdr(buff);
+		memset(ack_tcphdr, 0, sizeof(struct tcphdr));
 
 		ack_seq = be32_to_cpu(rcv_tcphdr->seq) + tcp_data_len;
 		ack_tcphdr->source  = rcv_tcphdr->dest;
 		ack_tcphdr->dest    = rcv_tcphdr->source;
 		ack_tcphdr->seq     = rcv_tcphdr->ack_seq; /* TODO: use proper seq */
 		ack_tcphdr->ack_seq = cpu_to_be32(ack_seq);
+		ack_tcphdr->doff    = 5;
 		ack_tcphdr->ack     = 1;
-		ack_tcphdr->window  = cpu_to_be16(32760); /* TODO: fix magic number */
+		ack_tcphdr->window  = cpu_to_be16(4000); /* TODO: fix magic number */
+		ack_tcphdr->check   = 0;
+		ack_tcphdr->urg_ptr = cpu_to_be16(0);
 	}
-
 
 	/* build ip header */
 	{
 		skb_push(buff, ip_header_len);
 		skb_reset_network_header(buff);
 		ack_iphdr = ip_hdr(buff);
+		memset(ack_iphdr, 0, sizeof(struct iphdr));
 
 		ack_iphdr->version = 4;
 		ack_iphdr->ihl = 5;
@@ -1629,15 +1635,26 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
 		ip_send_check(ack_iphdr);
 	}
 
-	buff->dev = skb->dev;
-	buff->protocol = cpu_to_be16(ETH_P_IP);
-	buff->ip_summed = CHECKSUM_COMPLETE;
-	buff->csum = ack_iphdr->check;
-	buff->ooo_okay = 1;
+	/* build ethernet header */
+	{
+		struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) skb->data;
+		struct ethhdr *eth;
+		skb_push(buff, mac_len);
+		skb_reset_mac_header(buff);
+		eth = eth_hdr(buff);
+		memcpy(eth->h_dest, ieee80211_get_SA(hdr), ETH_ALEN);
+		memcpy(eth->h_source, ieee80211_get_DA(hdr), ETH_ALEN);
+		eth->h_proto = cpu_to_be16(ETH_P_IP);
+	}
 
 	/* TCP checksum */
 	ack_tcphdr->check = csum_tcpudp_magic(ack_iphdr->saddr, ack_iphdr->daddr,
 		tcp_header_len, IPPROTO_TCP, csum_partial(ack_tcphdr, tcp_header_len, 0));
+
+	buff->dev = skb->dev;
+	buff->protocol = cpu_to_be16(ETH_P_IP);
+	buff->ip_summed = CHECKSUM_UNNECESSARY;
+	memset(buff->cb, 0, sizeof(buff->cb));
 
 	return buff;
 }
@@ -1652,32 +1669,6 @@ void ieee80211_xmit(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 	bool may_encrypt;
 
 	may_encrypt = !(info->flags & IEEE80211_TX_INTFL_DONT_ENCRYPT);
-
-	/* 우리가 올바른 방향으로 왔는지 커널 디버그 메시지를 출력해본다.
-	 *
-	 * 여기서 하는 일은, 들어온 socket buffer에 IP header가 제대로 존재하는지,
-	 * 그걸 출력해보는 것이다.
-	 * skb_network_header(skb)를 통해 IP header의 시작 지점을 얻어오고,
-	 * printk로 hexadecimal로 각 바이트를 출력해본다.
-	 *
-	 * 출력 결과가 45 00 .... 등으로 나오면 제대로 된 것이고, 실험 결과
-	 * 제대로 나오는 것을 볼 수 있었다.
-	 * */
-	{
-		int i;
-		char temp[300]="";
-		unsigned char *cur = skb_network_header(skb);
-		unsigned char *end = skb_end_pointer(skb);
-		for (i = 0; i < 40 && cur != end ; i++, cur++) {
-			temp[i*3] = "0123456789ABCDEF"[cur[0]/16];
-			temp[i*3+1] = "0123456789ABCDEF"[cur[0]%16];
-			temp[i*3+2] = ' ';
-		}
-		/*int diff = skb_network_header(skb) - skb->data;*/
-		/*printk(KERN_DEBUG" TX [KCM]: uh! %p-%p = %d\n", skb_network_header(skb), skb->data, diff); */
-		printk(KERN_DEBUG" TX [KCM %d]: uahahaha, %p %p %s\n",
-			ieee80211_is_tcp_data(skb), skb_network_header(skb), end, temp);
-	}
 
 	if (ieee80211_is_data(hdr->frame_control) &&
 		ieee80211_is_tcp_data(skb))
