@@ -22,6 +22,7 @@
 #include <linux/time.h>
 #include <linux/ip.h>
 #include <linux/tcp.h>
+#include <linux/if_ether.h>
 #include <net/net_namespace.h>
 #include <net/ieee80211_radiotap.h>
 #include <net/cfg80211.h>
@@ -31,6 +32,7 @@
 #include <uapi/linux/tcp.h>
 #include <uapi/linux/ip.h>
 #include <uapi/linux/in.h>
+#include <uapi/linux/if_ether.h>
 
 #include "ieee80211_i.h"
 #include "driver-ops.h"
@@ -1567,13 +1569,13 @@ static bool ieee80211_is_tcp_data(struct sk_buff *skb)
 	return (data_len > 0);
 }
 
-static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
+static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb)
 {
 	/* assumption: skb is checked against ieee80211_is_tcp_data() */
 	struct sk_buff *buff;
 	struct iphdr *rcv_iphdr = ip_hdr(skb), *ack_iphdr;
 	struct tcphdr *rcv_tcphdr = tcp_hdr(skb), *ack_tcphdr;
-	const size_t mac_len = 20; /* TODO: fix magic mac length */
+	const size_t mac_len = sizeof(struct ethhdr); /* TODO: fix magic mac length */
 	u32 ip_header_len = sizeof(struct iphdr);
 	u32 tcp_header_len = sizeof(struct tcphdr);
 	u16 ip_len = be16_to_cpu(rcv_iphdr->tot_len);
@@ -1629,15 +1631,48 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
 		ip_send_check(ack_iphdr);
 	}
 
-	buff->dev = skb->dev;
-	buff->protocol = cpu_to_be16(ETH_P_IP);
-	buff->ip_summed = CHECKSUM_COMPLETE;
-	buff->csum = ack_iphdr->check;
-	buff->ooo_okay = 1;
-
 	/* TCP checksum */
 	ack_tcphdr->check = csum_tcpudp_magic(ack_iphdr->saddr, ack_iphdr->daddr,
 		tcp_header_len, IPPROTO_TCP, csum_partial(ack_tcphdr, tcp_header_len, 0));
+
+	/* build ethernet header */
+	{
+		struct ethhdr *eth;
+		skb_push(buff, mac_len);
+		skb_reset_mac_header(buff);
+		eth = eth_hdr(buff);
+		memcpy(eth->h_dest, skb->dev->dev_addr, 6);
+		printk(KERN_DEBUG"!KCM! %02x %02x %02x %02x %02x %02x\n",
+			skb->dev->dev_addr[0],
+			skb->dev->dev_addr[1],
+			skb->dev->dev_addr[2],
+			skb->dev->dev_addr[3],
+			skb->dev->dev_addr[4],
+			skb->dev->dev_addr[5]
+			);
+		memset(eth->h_source, ((struct ieee80211_hdr *)skb->data)->addr1, 6);
+		eth->h_proto = cpu_to_be16(ETH_P_IP);
+	}
+
+	{
+		char temp[600]="";
+		int i;
+		for (i = 0; i < mac_len + ip_header_len + tcp_header_len; i++) {
+			temp[i*3] = "0123456789ABCDEF"[buff->data[i]/16];
+			temp[i*3+1] = "0123456789ABCDEF"[buff->data[i]%16];
+			temp[i*3+2] = ' ';
+		}
+		printk(KERN_DEBUG" Assembled [KCM]: %s\n", temp);
+	}
+
+	buff->dev = skb->dev;
+	buff->protocol = eth_type_trans(buff, buff->dev);/*cpu_to_be16(ETH_P_IP); */
+	buff->ip_summed = CHECKSUM_UNNECESSARY;
+	buff->pkt_type = PACKET_OTHERHOST;
+	memset(buff->cb, 0, sizeof(buff->cb));
+	/*buff->pkt_type = PACKET_HOST; */
+	/*buff->csum = ack_iphdr->check; */
+	/* buff->ooo_okay = 1; */
 
 	return buff;
 }
@@ -1682,7 +1717,7 @@ void ieee80211_xmit(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 	if (ieee80211_is_data(hdr->frame_control) &&
 		ieee80211_is_tcp_data(skb))
 	{
-		skb->iack_skb = ieee80211_prepare_tcp_ack_reply(skb);
+		skb->iack_skb = ieee80211_prepare_tcp_ack_reply(sdata, skb);
 	}
 
 	headroom = local->tx_headroom;
