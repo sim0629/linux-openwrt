@@ -578,7 +578,7 @@ static void skb_release_head_state(struct sk_buff *skb)
 	nf_bridge_put(skb->nf_bridge);
 #endif
 	if (skb->iack_skb != NULL) {
-		kfree_skb(skb->iack_skb);
+		consume_skb(skb->iack_skb);
 		skb->iack_skb = NULL;
 	}
 /* XXX: IS this still necessary? - JHS */
@@ -686,6 +686,13 @@ void consume_skb(struct sk_buff *skb)
 }
 EXPORT_SYMBOL(consume_skb);
 
+static void __copy_iack_skb(struct sk_buff *new, const struct sk_buff *old)
+{
+	new->iack_skb = old->iack_skb;
+	if (new->iack_skb != NULL)
+		skb_get(old->iack_skb);
+}
+
 static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 {
 	new->tstamp		= old->tstamp;
@@ -733,6 +740,8 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	new->vlan_tci		= old->vlan_tci;
 
 	skb_copy_secmark(new, old);
+
+	__copy_iack_skb(new, old);
 }
 
 /*
