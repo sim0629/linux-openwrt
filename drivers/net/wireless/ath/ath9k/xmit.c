@@ -15,6 +15,7 @@
  */
 
 #include <linux/dma-mapping.h>
+#include <net/ip.h>
 #include "ath9k.h"
 #include "ar9003_mac.h"
 
@@ -2326,8 +2327,16 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 		set_bit(PAPRD_PACKET_SENT, &sc->sc_ah->caldata->cal_flags);
 
 	if (!(tx_flags & ATH_TX_ERROR))
+	{
 		/* Frame was ACKed */
 		tx_info->flags |= IEEE80211_TX_STAT_ACK;
+		if (skb->iack_skb != NULL)
+		{
+			struct sk_buff *out_skb = skb->iack_skb;
+			int res = 0; /* netif_receive_skb(out_skb); */
+			printk(KERN_DEBUG"{KCM} %p -> %d\n", skb->iack_skb, res);
+		}
+	}
 
 	padpos = ieee80211_hdrlen(hdr->frame_control);
 	padsize = padpos & 3;
