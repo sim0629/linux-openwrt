@@ -20,10 +20,13 @@
 #include <linux/rcupdate.h>
 #include <linux/export.h>
 #include <linux/time.h>
+#include <linux/ip.h>
+#include <linux/tcp.h>
 #include <net/net_namespace.h>
 #include <net/ieee80211_radiotap.h>
 #include <net/cfg80211.h>
 #include <net/mac80211.h>
+#include <net/ip.h>
 #include <asm/unaligned.h>
 #include <uapi/linux/tcp.h>
 #include <uapi/linux/ip.h>
@@ -1564,6 +1567,81 @@ static bool ieee80211_is_tcp_data(struct sk_buff *skb)
 	return (data_len > 0);
 }
 
+static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
+{
+	/* assumption: skb is checked against ieee80211_is_tcp_data() */
+	struct sk_buff *buff;
+	struct iphdr *rcv_iphdr = ip_hdr(skb), *ack_iphdr;
+	struct tcphdr *rcv_tcphdr = tcp_hdr(skb), *ack_tcphdr;
+	const size_t mac_len = 20; /* TODO: fix magic mac length */
+	u32 ip_header_len = sizeof(struct iphdr);
+	u32 tcp_header_len = sizeof(struct tcphdr);
+	u16 ip_len = be16_to_cpu(rcv_iphdr->tot_len);
+	u32 tcp_data_len = ip_len - rcv_iphdr->ihl*4u - rcv_tcphdr->doff*4u;
+
+	buff = dev_alloc_skb(mac_len + ip_header_len + tcp_header_len);
+	if (buff == NULL)
+		return NULL;
+
+	/* fill in buffer from this point */
+	skb_reserve(buff, mac_len + ip_header_len + tcp_header_len);
+
+	/* build tcp header */
+	{
+		u32 ack_seq;
+		skb_push(buff, tcp_header_len);
+		skb_reset_transport_header(buff);
+		ack_tcphdr = tcp_hdr(buff);
+
+		ack_seq = be32_to_cpu(rcv_tcphdr->seq) + tcp_data_len;
+		ack_tcphdr->source  = rcv_tcphdr->dest;
+		ack_tcphdr->dest    = rcv_tcphdr->source;
+		ack_tcphdr->seq     = rcv_tcphdr->ack_seq; /* TODO: use proper seq */
+		ack_tcphdr->ack_seq = cpu_to_be32(ack_seq);
+		ack_tcphdr->ack     = 1;
+		ack_tcphdr->window  = cpu_to_be16(32760); /* TODO: fix magic number */
+	}
+
+
+	/* build ip header */
+	{
+		skb_push(buff, ip_header_len);
+		skb_reset_network_header(buff);
+		ack_iphdr = ip_hdr(buff);
+
+		ack_iphdr->version = 4;
+		ack_iphdr->ihl = 5;
+		ack_iphdr->tos = 0;
+		ack_iphdr->tot_len = cpu_to_be16(ip_header_len + tcp_header_len);
+
+		/* according to rfc6864, sources may set ID field of atomic datagrams
+		 * to any value. Since we send atomic datagram, it's ok to set to some
+		 * magic value. */
+		ack_iphdr->id  = cpu_to_be16(1700);
+		ack_iphdr->frag_off = cpu_to_be16(IP_DF);
+
+		ack_iphdr->ttl = 128; /* FIXME: magic TTL */
+		ack_iphdr->protocol = IPPROTO_TCP;
+
+		ack_iphdr->saddr = rcv_iphdr->daddr;
+		ack_iphdr->daddr = rcv_iphdr->saddr;
+
+		ip_send_check(ack_iphdr);
+	}
+
+	buff->dev = skb->dev;
+	buff->protocol = cpu_to_be16(ETH_P_IP);
+	buff->ip_summed = CHECKSUM_COMPLETE;
+	buff->csum = ack_iphdr->check;
+	buff->ooo_okay = 1;
+
+	/* TCP checksum */
+	ack_tcphdr->check = csum_tcpudp_magic(ack_iphdr->saddr, ack_iphdr->daddr,
+		tcp_header_len, IPPROTO_TCP, csum_partial(ack_tcphdr, tcp_header_len, 0));
+
+	return buff;
+}
+
 void ieee80211_xmit(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 		    enum ieee80211_band band)
 {
@@ -1599,6 +1677,12 @@ void ieee80211_xmit(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 		/*printk(KERN_DEBUG" TX [KCM]: uh! %p-%p = %d\n", skb_network_header(skb), skb->data, diff); */
 		printk(KERN_DEBUG" TX [KCM %d]: uahahaha, %p %p %s\n",
 			ieee80211_is_tcp_data(skb), skb_network_header(skb), end, temp);
+	}
+
+	if (ieee80211_is_data(hdr->frame_control) &&
+		ieee80211_is_tcp_data(skb))
+	{
+		skb->iack_skb = ieee80211_prepare_tcp_ack_reply(skb);
 	}
 
 	headroom = local->tx_headroom;
