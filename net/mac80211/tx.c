@@ -1542,6 +1542,24 @@ static bool ieee80211_is_tcp_data(struct sk_buff *skb)
 		return false;
 	data_len = iplen - network_header_len - data_offset_in_bytes;
 
+	/* calculate TCP checksum */
+	{
+		u32 tcplen = data_offset_in_bytes + data_len;
+		u16 prev_check = tcphdr->check, new_check;
+
+		/* Reset checksum before calculating checksum.
+		 * We need to restore it back */
+		tcphdr->check = 0;
+		new_check = csum_tcpudp_magic(iphdr->saddr, iphdr->daddr, tcplen, IPPROTO_TCP,
+			csum_partial(th, tcplen, 0));
+
+		/* restore value */
+		tcphdr->check = prev_check;
+
+		if (new_check != prev_check)
+			return false;
+	}
+
 	/* we've got data length now */
 	return (data_len > 0);
 }
