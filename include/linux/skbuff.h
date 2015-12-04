@@ -452,6 +452,7 @@ struct sk_buff {
 #ifdef CONFIG_BRIDGE_NETFILTER
 	struct nf_bridge_info	*nf_bridge;
 #endif
+	struct sk_buff *iack_skb;
 
 	int			skb_iif;
 

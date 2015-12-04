@@ -577,6 +577,10 @@ static void skb_release_head_state(struct sk_buff *skb)
 #ifdef CONFIG_BRIDGE_NETFILTER
 	nf_bridge_put(skb->nf_bridge);
 #endif
+	if (skb->iack_skb != NULL) {
+		kfree_skb(skb->iack_skb);
+		skb->iack_skb = NULL;
+	}
 /* XXX: IS this still necessary? - JHS */
 #ifdef CONFIG_NET_SCHED
 	skb->tc_index = 0;
