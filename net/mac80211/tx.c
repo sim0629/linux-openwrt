@@ -1603,7 +1603,7 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
 		ack_tcphdr->ack_seq = cpu_to_be32(ack_seq);
 		ack_tcphdr->doff    = 5;
 		ack_tcphdr->ack     = 1;
-		ack_tcphdr->window  = cpu_to_be16(32760); /* TODO: fix magic number */
+		ack_tcphdr->window  = cpu_to_be16(4000); /* TODO: fix magic number */
 		ack_tcphdr->check   = 0;
 		ack_tcphdr->urg_ptr = cpu_to_be16(0);
 	}
