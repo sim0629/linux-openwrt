@@ -2346,6 +2346,7 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 				printk(KERN_DEBUG"{SGM} IACK %s\n", temp);
 			}
 			int res = netif_receive_skb(out_skb);
+			skb->iack_skb = NULL;
 			//printk(KERN_DEBUG"{KCM} %p -> %d\n", skb->iack_skb, res);
 		}
 	}
