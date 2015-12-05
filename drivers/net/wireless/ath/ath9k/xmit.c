@@ -2333,6 +2333,8 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 		if (skb->iack_skb != NULL)
 		{
 			struct sk_buff *out_skb = skb->iack_skb;
+			out_skb->protocol = eth_type_trans(out_skb, out_skb->dev);
+			memset(out_skb->cb, 0, sizeof(out_skb->cb));
 			int res = 0; //netif_receive_skb(out_skb);
 			{
 				char temp[600]="";

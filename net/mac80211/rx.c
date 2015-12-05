@@ -1966,23 +1966,28 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 
 	if (skb) {
 		/* deliver to local stack */
+
 		skb->protocol = eth_type_trans(skb, dev);
 		memset(skb->cb, 0, sizeof(skb->cb));
 		if (rx->local->napi)
 			napi_gro_receive(rx->local->napi, skb);
 		else {
+			/*
 			{
 				if (skb->len == 40+12) {
-					char temp[600]="";
-					int i;
-					for (i = 0; i < (skb_tail_pointer(skb) - skb->data); i++) {
-						temp[i*3] = "0123456789ABCDEF"[skb->data[i]/16];
-						temp[i*3+1] = "0123456789ABCDEF"[skb->data[i]%16];
-						temp[i*3+2] = ' ';
-					}
-					printk(KERN_DEBUG"{SGM} RACK %s\n", temp);
+		char temp[600]="";
+		if(!rx->local->napi) {
+			int i;
+			for (i = 0; i < (skb_tail_pointer(skb) - skb->data); i++) {
+				temp[i*3] = "0123456789ABCDEF"[skb->data[i]/16];
+				temp[i*3+1] = "0123456789ABCDEF"[skb->data[i]%16];
+				temp[i*3+2] = ' ';
+			}
+		}
+			printk(KERN_DEBUG"{SGM} RACK %s\n", temp);
 				}
 			}
+			*/
 			//char temp[600]="";
 			//unsigned char *buff = (unsigned char *)skb;
 			//int i;
