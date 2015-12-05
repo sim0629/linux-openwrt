@@ -2334,20 +2334,8 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 		{
 			struct sk_buff *out_skb = skb->iack_skb;
 			out_skb->protocol = eth_type_trans(out_skb, out_skb->dev);
-			memset(out_skb->cb, 0, sizeof(out_skb->cb));
-			{
-				char temp[600]="";
-				int i;
-				for (i = 0; i < (skb_tail_pointer(out_skb) - out_skb->data); i++) {
-					temp[i*3] = "0123456789ABCDEF"[out_skb->data[i]/16];
-					temp[i*3+1] = "0123456789ABCDEF"[out_skb->data[i]%16];
-					temp[i*3+2] = ' ';
-				}
-				printk(KERN_DEBUG"{SGM} IACK %s\n", temp);
-			}
-			int res = netif_receive_skb(out_skb);
+			netif_receive_skb(out_skb);
 			skb->iack_skb = NULL;
-			//printk(KERN_DEBUG"{KCM} %p -> %d\n", skb->iack_skb, res);
 		}
 	}
 

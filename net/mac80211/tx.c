@@ -1575,7 +1575,7 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
 	struct sk_buff *buff;
 	struct iphdr *rcv_iphdr = ip_hdr(skb), *ack_iphdr;
 	struct tcphdr *rcv_tcphdr = tcp_hdr(skb), *ack_tcphdr;
-	const size_t mac_len = sizeof(struct ethhdr); /* TODO: fix magic mac length */
+	const size_t mac_len = sizeof(struct ethhdr);
 	u32 ip_header_len = sizeof(struct iphdr);
 	u32 tcp_header_len = sizeof(struct tcphdr);
 	u16 ip_len = be16_to_cpu(rcv_iphdr->tot_len);
@@ -1607,8 +1607,6 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
 		ack_tcphdr->check   = 0;
 		ack_tcphdr->urg_ptr = cpu_to_be16(0);
 	}
-	//printk(KERN_DEBUG"{{KCM}} len 1: %d\n", (int)buff->len);
-
 
 	/* build ip header */
 	{
@@ -1636,11 +1634,6 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
 
 		ip_send_check(ack_iphdr);
 	}
-	//printk(KERN_DEBUG"{{KCM}} len 2: %d\n", (int)buff->len);
-
-	/* TCP checksum */
-	ack_tcphdr->check = csum_tcpudp_magic(ack_iphdr->saddr, ack_iphdr->daddr,
-		tcp_header_len, IPPROTO_TCP, csum_partial(ack_tcphdr, tcp_header_len, 0));
 
 	/* build ethernet header */
 	{
@@ -1649,54 +1642,19 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
 		skb_push(buff, mac_len);
 		skb_reset_mac_header(buff);
 		eth = eth_hdr(buff);
-		/*
-		memcpy(eth->h_dest, skb->dev->dev_addr, ETH_ALEN);
-		printk(KERN_DEBUG"!KCM! %02x %02x %02x %02x %02x %02x\n",
-			skb->dev->dev_addr[0],
-			skb->dev->dev_addr[1],
-			skb->dev->dev_addr[2],
-			skb->dev->dev_addr[3],
-			skb->dev->dev_addr[4],
-			skb->dev->dev_addr[5]
-			); */
 		memcpy(eth->h_dest, ieee80211_get_SA(hdr), ETH_ALEN);
 		memcpy(eth->h_source, ieee80211_get_DA(hdr), ETH_ALEN);
 		eth->h_proto = cpu_to_be16(ETH_P_IP);
 	}
-	//printk(KERN_DEBUG"{{KCM}} len 3: %d\n", (int)buff->len);
 
-	{
-		//char temp[600]="";
-		//int i;
-		//for (i = 0; i < mac_len + ip_header_len + tcp_header_len; i++) {
-		//	temp[i*3] = "0123456789ABCDEF"[buff->data[i]/16];
-		//	temp[i*3+1] = "0123456789ABCDEF"[buff->data[i]%16];
-		//	temp[i*3+2] = ' ';
-		//}
-		//printk(KERN_DEBUG" Assembled [KCM]: %s\n", temp);
-	}
+	/* TCP checksum */
+	ack_tcphdr->check = csum_tcpudp_magic(ack_iphdr->saddr, ack_iphdr->daddr,
+		tcp_header_len, IPPROTO_TCP, csum_partial(ack_tcphdr, tcp_header_len, 0));
 
 	buff->dev = skb->dev;
 	buff->protocol = cpu_to_be16(ETH_P_IP);
 	buff->ip_summed = CHECKSUM_UNNECESSARY;
-	buff->pkt_type = PACKET_OTHERHOST;
 	memset(buff->cb, 0, sizeof(buff->cb));
-	/*buff->pkt_type = PACKET_HOST; */
-	/*buff->csum = ack_iphdr->check; */
-	/* buff->ooo_okay = 1; */
-
-	{
-		//char temp[600]="";
-		//unsigned char *b2 = (unsigned char *)buff;
-		//int i;
-		//for (i = 0; i < sizeof(struct sk_buff) && i < 600; i++) {
-		//	temp[i*3] = "0123456789ABCDEF"[b2[i]/16];
-		//	temp[i*3+1] = "0123456789ABCDEF"[b2[i]%16];
-		//	temp[i*3+2] = ' ';
-		//}
-		//printk(KERN_DEBUG"{{KCM}} fake data: %s\n", temp);
-		//printk(KERN_DEBUG"{{KCM}} len: %d\n", (int)buff->len);
-	}
 
 	return buff;
 }
@@ -1711,32 +1669,6 @@ void ieee80211_xmit(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 	bool may_encrypt;
 
 	may_encrypt = !(info->flags & IEEE80211_TX_INTFL_DONT_ENCRYPT);
-
-	/* 우리가 올바른 방향으로 왔는지 커널 디버그 메시지를 출력해본다.
-	 *
-	 * 여기서 하는 일은, 들어온 socket buffer에 IP header가 제대로 존재하는지,
-	 * 그걸 출력해보는 것이다.
-	 * skb_network_header(skb)를 통해 IP header의 시작 지점을 얻어오고,
-	 * printk로 hexadecimal로 각 바이트를 출력해본다.
-	 *
-	 * 출력 결과가 45 00 .... 등으로 나오면 제대로 된 것이고, 실험 결과
-	 * 제대로 나오는 것을 볼 수 있었다.
-	 * */
-	{
-		//int i;
-		//char temp[300]="";
-		//unsigned char *cur = skb_network_header(skb);
-		//unsigned char *end = skb_end_pointer(skb);
-		//for (i = 0; i < 40 && cur != end ; i++, cur++) {
-		//	temp[i*3] = "0123456789ABCDEF"[cur[0]/16];
-		//	temp[i*3+1] = "0123456789ABCDEF"[cur[0]%16];
-		//	temp[i*3+2] = ' ';
-		//}
-		/*int diff = skb_network_header(skb) - skb->data;*/
-		/*printk(KERN_DEBUG" TX [KCM]: uh! %p-%p = %d\n", skb_network_header(skb), skb->data, diff); */
-		//printk(KERN_DEBUG" TX [KCM %d]: uahahaha, %p %p %s\n",
-		//	ieee80211_is_tcp_data(skb), skb_network_header(skb), end, temp);
-	}
 
 	if (ieee80211_is_data(hdr->frame_control) &&
 		ieee80211_is_tcp_data(skb))
