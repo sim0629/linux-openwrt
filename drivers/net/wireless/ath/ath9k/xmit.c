@@ -2333,8 +2333,18 @@ static void ath_tx_complete(struct ath_softc *sc, struct sk_buff *skb,
 		if (skb->iack_skb != NULL)
 		{
 			struct sk_buff *out_skb = skb->iack_skb;
-			int res = 0; /* netif_receive_skb(out_skb); */
-			printk(KERN_DEBUG"{KCM} %p -> %d\n", skb->iack_skb, res);
+			int res = 0; //netif_receive_skb(out_skb);
+			{
+				char temp[600]="";
+				int i;
+				for (i = 0; i < (skb_tail_pointer(out_skb) - out_skb->data); i++) {
+					temp[i*3] = "0123456789ABCDEF"[out_skb->data[i]/16];
+					temp[i*3+1] = "0123456789ABCDEF"[out_skb->data[i]%16];
+					temp[i*3+2] = ' ';
+				}
+				printk(KERN_DEBUG"{SGM} IACK %s\n", temp);
+			}
+			//printk(KERN_DEBUG"{KCM} %p -> %d\n", skb->iack_skb, res);
 		}
 	}
 

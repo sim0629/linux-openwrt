@@ -1980,18 +1980,18 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 						temp[i*3+1] = "0123456789ABCDEF"[skb->data[i]%16];
 						temp[i*3+2] = ' ';
 					}
-					printk(KERN_DEBUG" Realmbled [KCM]: %s\n", temp);
+					printk(KERN_DEBUG"{SGM} RACK %s\n", temp);
 				}
 			}
-			char temp[600]="";
-			unsigned char *buff = (unsigned char *)skb;
-			int i;
-			for (i = 0; i < sizeof(struct sk_buff) && i < 600; i++) {
-				temp[i*3] = "0123456789ABCDEF"[buff[i]/16];
-				temp[i*3+1] = "0123456789ABCDEF"[buff[i]%16];
-				temp[i*3+2] = ' ';
-			}
-			printk(KERN_DEBUG"{{KCM}} real data: %s\n", temp);
+			//char temp[600]="";
+			//unsigned char *buff = (unsigned char *)skb;
+			//int i;
+			//for (i = 0; i < sizeof(struct sk_buff) && i < 600; i++) {
+			//	temp[i*3] = "0123456789ABCDEF"[buff[i]/16];
+			//	temp[i*3+1] = "0123456789ABCDEF"[buff[i]%16];
+			//	temp[i*3+2] = ' ';
+			//}
+			//printk(KERN_DEBUG"{{KCM}} real data: %s\n", temp);
 			netif_receive_skb(skb);
 		}
 	}

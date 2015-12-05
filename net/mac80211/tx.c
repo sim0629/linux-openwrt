@@ -1569,7 +1569,7 @@ static bool ieee80211_is_tcp_data(struct sk_buff *skb)
 	return (data_len > 0);
 }
 
-static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb)
+static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct sk_buff *skb)
 {
 	/* assumption: skb is checked against ieee80211_is_tcp_data() */
 	struct sk_buff *buff;
@@ -1607,7 +1607,7 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct ieee80211_sub_if_d
 		ack_tcphdr->check   = 0;
 		ack_tcphdr->urg_ptr = cpu_to_be16(0);
 	}
-	printk(KERN_DEBUG"{{KCM}} len 1: %d\n", (int)buff->len);
+	//printk(KERN_DEBUG"{{KCM}} len 1: %d\n", (int)buff->len);
 
 
 	/* build ip header */
@@ -1636,7 +1636,7 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct ieee80211_sub_if_d
 
 		ip_send_check(ack_iphdr);
 	}
-	printk(KERN_DEBUG"{{KCM}} len 2: %d\n", (int)buff->len);
+	//printk(KERN_DEBUG"{{KCM}} len 2: %d\n", (int)buff->len);
 
 	/* TCP checksum */
 	ack_tcphdr->check = csum_tcpudp_magic(ack_iphdr->saddr, ack_iphdr->daddr,
@@ -1663,17 +1663,17 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct ieee80211_sub_if_d
 		memcpy(eth->h_source, ieee80211_get_DA(hdr), ETH_ALEN);
 		eth->h_proto = cpu_to_be16(ETH_P_IP);
 	}
-	printk(KERN_DEBUG"{{KCM}} len 3: %d\n", (int)buff->len);
+	//printk(KERN_DEBUG"{{KCM}} len 3: %d\n", (int)buff->len);
 
 	{
-		char temp[600]="";
-		int i;
-		for (i = 0; i < mac_len + ip_header_len + tcp_header_len; i++) {
-			temp[i*3] = "0123456789ABCDEF"[buff->data[i]/16];
-			temp[i*3+1] = "0123456789ABCDEF"[buff->data[i]%16];
-			temp[i*3+2] = ' ';
-		}
-		printk(KERN_DEBUG" Assembled [KCM]: %s\n", temp);
+		//char temp[600]="";
+		//int i;
+		//for (i = 0; i < mac_len + ip_header_len + tcp_header_len; i++) {
+		//	temp[i*3] = "0123456789ABCDEF"[buff->data[i]/16];
+		//	temp[i*3+1] = "0123456789ABCDEF"[buff->data[i]%16];
+		//	temp[i*3+2] = ' ';
+		//}
+		//printk(KERN_DEBUG" Assembled [KCM]: %s\n", temp);
 	}
 
 	buff->dev = skb->dev;
@@ -1686,16 +1686,16 @@ static struct sk_buff *ieee80211_prepare_tcp_ack_reply(struct ieee80211_sub_if_d
 	/* buff->ooo_okay = 1; */
 
 	{
-		char temp[600]="";
-		unsigned char *b2 = (unsigned char *)buff;
-		int i;
-		for (i = 0; i < sizeof(struct sk_buff) && i < 600; i++) {
-			temp[i*3] = "0123456789ABCDEF"[b2[i]/16];
-			temp[i*3+1] = "0123456789ABCDEF"[b2[i]%16];
-			temp[i*3+2] = ' ';
-		}
-		printk(KERN_DEBUG"{{KCM}} fake data: %s\n", temp);
-		printk(KERN_DEBUG"{{KCM}} len: %d\n", (int)buff->len);
+		//char temp[600]="";
+		//unsigned char *b2 = (unsigned char *)buff;
+		//int i;
+		//for (i = 0; i < sizeof(struct sk_buff) && i < 600; i++) {
+		//	temp[i*3] = "0123456789ABCDEF"[b2[i]/16];
+		//	temp[i*3+1] = "0123456789ABCDEF"[b2[i]%16];
+		//	temp[i*3+2] = ' ';
+		//}
+		//printk(KERN_DEBUG"{{KCM}} fake data: %s\n", temp);
+		//printk(KERN_DEBUG"{{KCM}} len: %d\n", (int)buff->len);
 	}
 
 	return buff;
@@ -1723,25 +1723,25 @@ void ieee80211_xmit(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 	 * 제대로 나오는 것을 볼 수 있었다.
 	 * */
 	{
-		int i;
-		char temp[300]="";
-		unsigned char *cur = skb_network_header(skb);
-		unsigned char *end = skb_end_pointer(skb);
-		for (i = 0; i < 40 && cur != end ; i++, cur++) {
-			temp[i*3] = "0123456789ABCDEF"[cur[0]/16];
-			temp[i*3+1] = "0123456789ABCDEF"[cur[0]%16];
-			temp[i*3+2] = ' ';
-		}
+		//int i;
+		//char temp[300]="";
+		//unsigned char *cur = skb_network_header(skb);
+		//unsigned char *end = skb_end_pointer(skb);
+		//for (i = 0; i < 40 && cur != end ; i++, cur++) {
+		//	temp[i*3] = "0123456789ABCDEF"[cur[0]/16];
+		//	temp[i*3+1] = "0123456789ABCDEF"[cur[0]%16];
+		//	temp[i*3+2] = ' ';
+		//}
 		/*int diff = skb_network_header(skb) - skb->data;*/
 		/*printk(KERN_DEBUG" TX [KCM]: uh! %p-%p = %d\n", skb_network_header(skb), skb->data, diff); */
-		printk(KERN_DEBUG" TX [KCM %d]: uahahaha, %p %p %s\n",
-			ieee80211_is_tcp_data(skb), skb_network_header(skb), end, temp);
+		//printk(KERN_DEBUG" TX [KCM %d]: uahahaha, %p %p %s\n",
+		//	ieee80211_is_tcp_data(skb), skb_network_header(skb), end, temp);
 	}
 
 	if (ieee80211_is_data(hdr->frame_control) &&
 		ieee80211_is_tcp_data(skb))
 	{
-		skb->iack_skb = ieee80211_prepare_tcp_ack_reply(sdata, skb);
+		skb->iack_skb = ieee80211_prepare_tcp_ack_reply(skb);
 	}
 
 	headroom = local->tx_headroom;
