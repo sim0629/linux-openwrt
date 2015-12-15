@@ -3248,6 +3248,7 @@ struct cfg80211_cached_keys;
  * @event_list: (private) list for internal event processing
  * @event_lock: (private) lock for event list
  * @owner_nlportid: (private) owner socket port ID
+ * @iack: implicit ack is enabled
  */
 struct wireless_dev {
 	struct wiphy *wiphy;
@@ -3296,6 +3297,8 @@ struct wireless_dev {
 	unsigned int cac_time_ms;
 
 	u32 owner_nlportid;
+
+	bool iack;
 
 #ifdef CPTCFG_CFG80211_WEXT
 	/* wext data */

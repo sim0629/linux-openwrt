@@ -722,6 +722,9 @@
  *	QoS mapping is relevant for IP packets, it is only valid during an
  *	association. This is cleared on disassociation and AP restart.
  *
+ * @NL80211_CMD_SET_IACK: Set implicit ack, using %NL80211_ATTR_IACK_STATE
+ * @NL80211_CMD_GET_IACK: Get implicit ack status in %NL80211_ATTR_IACK_STATE
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -892,6 +895,9 @@ enum nl80211_commands {
 	NL80211_CMD_VENDOR,
 
 	NL80211_CMD_SET_QOS_MAP,
+
+	NL80211_CMD_SET_IACK,
+	NL80211_CMD_GET_IACK,
 
 	/* add new commands above here */
 
@@ -1594,6 +1600,9 @@ enum nl80211_commands {
  * @NL80211_ATTR_WIPHY_ANTENNA_GAIN: Configured antenna gain. Used to reduce
  *	transmit power to stay within regulatory limits. u32, dBi.
  *
+ * @NL8022_ATTR_IACK_STATE: implicit ack state, using &enum nl80211_iack_state
+ *	values.
+ *
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
  */
@@ -1935,6 +1944,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_MAX_CSA_COUNTERS,
 
 	NL80211_ATTR_WIPHY_ANTENNA_GAIN,
+
+	NL80211_ATTR_IACK_STATE,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -3410,6 +3421,16 @@ struct nl80211_pattern_support {
 	__u32 max_pattern_len;
 	__u32 max_pkt_offset;
 } __attribute__((packed));
+
+/**
+ * enum nl80211_iack_state - implicit ack state
+ * @NL80211_IACK_DISABLED: implicit ack is disabled
+ * @NL80211_IACK_ENABLED: implicit ack is enabled
+ */
+enum nl80211_iack_state {
+	NL80211_IACK_DISABLED,
+	NL80211_IACK_ENABLED,
+};
 
 /* only for backward compatibility */
 #define __NL80211_WOWLAN_PKTPAT_INVALID __NL80211_PKTPAT_INVALID

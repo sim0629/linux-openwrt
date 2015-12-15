@@ -388,6 +388,7 @@ static const struct nla_policy nl80211_policy[NL80211_ATTR_MAX+1] = {
 	[NL80211_ATTR_IFACE_SOCKET_OWNER] = { .type = NLA_FLAG },
 	[NL80211_ATTR_CSA_C_OFFSETS_TX] = { .type = NLA_BINARY },
 	[NL80211_ATTR_WIPHY_ANTENNA_GAIN] = { .type = NLA_U32 },
+	[NL80211_ATTR_IACK_STATE] = { .type = NLA_U32 },
 };
 
 /* policy for the key attributes */
@@ -9387,6 +9388,34 @@ static int nl80211_set_qos_map(struct sk_buff *skb,
 	return ret;
 }
 
+static int nl80211_set_iack(struct sk_buff *skb, struct genl_info *info)
+{
+	struct wireless_dev *wdev;
+	struct net_device *dev = info->user_ptr[1];
+	u32 iack_state;
+
+	if (!info->attrs[NL80211_ATTR_IACK_STATE])
+		return -EINVAL;
+
+	iack_state = nla_get_u32(info->attrs[NL80211_ATTR_IACK_STATE]);
+
+	if (iack_state != NL80211_IACK_DISABLED &&
+	    iack_state != NL80211_IACK_ENABLED)
+		return -EINVAL;
+
+	wdev = dev->ieee80211_ptr;
+
+	wdev->iack = (iack_state == NL80211_IACK_ENABLED);
+
+	return 0;
+}
+
+static int nl80211_get_iack(struct sk_buff *skb, struct genl_info *info)
+{
+	/* Nothing to do */
+	return 0;
+}
+
 #define NL80211_FLAG_NEED_WIPHY		0x01
 #define NL80211_FLAG_NEED_NETDEV	0x02
 #define NL80211_FLAG_NEED_RTNL		0x04
@@ -10126,6 +10155,22 @@ static __genl_const struct genl_ops nl80211_ops[] = {
 		.flags = GENL_ADMIN_PERM,
 		.internal_flags = NL80211_FLAG_NEED_NETDEV_UP |
 				  NL80211_FLAG_NEED_RTNL,
+	},
+	{
+		.cmd = NL80211_CMD_SET_IACK,
+		.doit = nl80211_set_iack,
+		.policy = nl80211_policy,
+		.flags = GENL_ADMIN_PERM,
+		.internal_flags = NL80211_FLAG_NEED_NETDEV |
+		                  NL80211_FLAG_NEED_RTNL,
+	},
+	{
+		.cmd = NL80211_CMD_GET_IACK,
+		.doit = nl80211_get_iack,
+		.policy = nl80211_policy,
+		/* can be retrieved by unprivileged users */
+		.internal_flags = NL80211_FLAG_NEED_NETDEV |
+		                  NL80211_FLAG_NEED_RTNL,
 	},
 };
 
