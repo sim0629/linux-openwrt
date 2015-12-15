@@ -252,6 +252,8 @@ static const char *commands[NL80211_CMD_MAX + 1] = {
 	[NL80211_CMD_SET_COALESCE] = "set_coalesce",
 	[NL80211_CMD_CHANNEL_SWITCH] = "channel_switch",
 	[NL80211_CMD_VENDOR] = "vendor",
+	[NL80211_CMD_SET_IACK] = "set_iack",
+	[NL80211_CMD_GET_IACK] = "get_iack",
 };
 
 static char cmdbuf[100];
