@@ -1670,11 +1670,13 @@ void ieee80211_xmit(struct ieee80211_sub_if_data *sdata, struct sk_buff *skb,
 
 	may_encrypt = !(info->flags & IEEE80211_TX_INTFL_DONT_ENCRYPT);
 
+	/*
 	if (ieee80211_is_data(hdr->frame_control) &&
 		ieee80211_is_tcp_data(skb))
 	{
 		skb->iack_skb = ieee80211_prepare_tcp_ack_reply(skb);
 	}
+	*/
 
 	headroom = local->tx_headroom;
 	if (may_encrypt)
