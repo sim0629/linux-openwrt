@@ -1,7 +1,7 @@
 VERSION = 3
 PATCHLEVEL = 13
 SUBLEVEL = 11
-EXTRAVERSION = -ckt29
+EXTRAVERSION = -binch
 NAME = King of Alienated Frog Porn
 
 # *DOCUMENTATION*
