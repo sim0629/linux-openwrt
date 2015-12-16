@@ -3947,7 +3947,7 @@ static void tcp_send_dupack(struct sock *sk, const struct sk_buff *skb)
 		}
 	}
 
-	tcp_send_ack(sk);
+	//tcp_send_ack(sk);
 }
 
 /* These routines update the SACK block as out-of-order packets arrive or
@@ -4802,7 +4802,7 @@ static void __tcp_ack_snd_check(struct sock *sk, int ofo_possible)
 	    /* We have out of order data. */
 	    (ofo_possible && skb_peek(&tp->out_of_order_queue))) {
 		/* Then ack it now */
-		tcp_send_ack(sk);
+		//tcp_send_ack(sk);
 	} else {
 		/* Else, send delayed ack. */
 		tcp_send_delayed_ack(sk);
